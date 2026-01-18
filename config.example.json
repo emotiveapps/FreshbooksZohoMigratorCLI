@@ -1,0 +1,17 @@
+{
+  "freshbooks": {
+    "clientId": "your-freshbooks-client-id",
+    "clientSecret": "your-freshbooks-client-secret",
+    "accessToken": "your-access-token",
+    "refreshToken": "your-refresh-token",
+    "accountId": "your-account-id"
+  },
+  "zoho": {
+    "clientId": "your-zoho-client-id",
+    "clientSecret": "your-zoho-client-secret",
+    "accessToken": "your-access-token",
+    "refreshToken": "your-refresh-token",
+    "organizationId": "your-organization-id",
+    "region": "com"
+  }
+}

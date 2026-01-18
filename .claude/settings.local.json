@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:www.freshbooks.com)",
+      "WebFetch(domain:www.zoho.com)",
+      "WebSearch",
+      "Bash(swift build:*)",
+      "Bash(swift run:*)",
+      "Bash(tree:*)"
+    ]
+  }
+}
