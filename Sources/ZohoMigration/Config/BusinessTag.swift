@@ -11,6 +11,19 @@ enum BusinessLine: Equatable, Hashable {
             return name
         }
     }
+
+    /// Extract short code from name, e.g., "Emotive Apps (EA)" -> "EA"
+    var shortCode: String {
+        let name = self.name
+        if let openParen = name.lastIndex(of: "("),
+           let closeParen = name.lastIndex(of: ")"),
+           openParen < closeParen {
+            let start = name.index(after: openParen)
+            return String(name[start..<closeParen])
+        }
+        // Fallback: first two characters uppercase
+        return String(name.prefix(2)).uppercased()
+    }
 }
 
 /// Helper for business line tagging operations

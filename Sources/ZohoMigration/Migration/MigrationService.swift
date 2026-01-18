@@ -51,6 +51,7 @@ class MigrationService {
     private var vendorIdMapping: [Int: String] = [:]
     private var accountIdMapping: [Int: String] = [:]
     private var configAccountIdMapping: [String: String] = [:]  // category name -> Zoho account ID
+    private var accountNameMapping: [String: String] = [:]  // Zoho account ID -> category name (reverse)
     private var itemIdMapping: [Int: String] = [:]
     private var invoiceIdMapping: [Int: String] = [:]
     private var defaultExpenseAccountId: String?
@@ -209,6 +210,7 @@ class MigrationService {
             if let existingId = existingByName[nameLower] {
                 parentAccountIds[parentName] = existingId
                 configAccountIdMapping[parentName] = existingId
+                accountNameMapping[existingId] = parentName
                 existingCount += 1
                 if verbose {
                     print("  [EXISTS] Parent: \(parentName)")
@@ -225,6 +227,7 @@ class MigrationService {
                     if let accountId = created.accountId {
                         parentAccountIds[parentName] = accountId
                         configAccountIdMapping[parentName] = accountId
+                        accountNameMapping[accountId] = parentName
                         if defaultExpenseAccountId == nil {
                             defaultExpenseAccountId = accountId
                         }
@@ -234,6 +237,7 @@ class MigrationService {
                     let placeholderId = "dry-run-parent-\(parentName.replacingOccurrences(of: " ", with: "-"))"
                     parentAccountIds[parentName] = placeholderId
                     configAccountIdMapping[parentName] = placeholderId
+                    accountNameMapping[placeholderId] = parentName
                     if defaultExpenseAccountId == nil {
                         defaultExpenseAccountId = "dry-run-default-account"
                     }
@@ -248,6 +252,7 @@ class MigrationService {
                         if let accountId = existing.accountId {
                             parentAccountIds[parentName] = accountId
                             configAccountIdMapping[parentName] = accountId
+                            accountNameMapping[accountId] = parentName
                             existingByName[nameLower] = accountId
                             if defaultExpenseAccountId == nil {
                                 defaultExpenseAccountId = accountId
@@ -296,6 +301,7 @@ class MigrationService {
             // Check if child already exists
             if let existingId = existingByName[nameLower] {
                 configAccountIdMapping[zohoName] = existingId
+                accountNameMapping[existingId] = zohoName
 
                 // Check if the existing account has the correct parent
                 if let existingAccount = existingAccountsByName[nameLower] {
@@ -338,6 +344,7 @@ class MigrationService {
                 if let created = try await zohoAPI.createAccount(request, parentInfo: parentInfo.isEmpty ? nil : parentInfo) {
                     if let accountId = created.accountId {
                         configAccountIdMapping[zohoName] = accountId
+                        accountNameMapping[accountId] = zohoName
                         if defaultExpenseAccountId == nil {
                             defaultExpenseAccountId = accountId
                         }
@@ -346,6 +353,7 @@ class MigrationService {
                 } else if dryRun {
                     let placeholderId = "dry-run-child-\(zohoName.replacingOccurrences(of: " ", with: "-"))"
                     configAccountIdMapping[zohoName] = placeholderId
+                    accountNameMapping[placeholderId] = zohoName
                     if defaultExpenseAccountId == nil {
                         defaultExpenseAccountId = "dry-run-default-account"
                     }
@@ -359,6 +367,7 @@ class MigrationService {
                     if let existing = refreshedAccounts.first(where: { $0.accountName?.lowercased() == nameLower }) {
                         if let accountId = existing.accountId {
                             configAccountIdMapping[zohoName] = accountId
+                            accountNameMapping[accountId] = zohoName
                             if defaultExpenseAccountId == nil {
                                 defaultExpenseAccountId = accountId
                             }
@@ -964,6 +973,7 @@ class MigrationService {
             guard let mapperResult = ExpenseMapper.map(
                 expense,
                 accountIdMapping: accountIdMapping,
+                accountNameMapping: accountNameMapping,
                 vendorIdMapping: vendorIdMapping,
                 customerIdMapping: customerIdMapping,
                 defaultAccountId: defaultExpenseAccountId,
@@ -978,18 +988,15 @@ class MigrationService {
             }
 
             let request = mapperResult.request
+            let categoryName = mapperResult.categoryName ?? "Unknown"
+            var businessTag: String? = nil
             if let businessLine = mapperResult.businessLine {
                 tagCounts[businessLine, default: 0] += 1
-
-                if verbose {
-                    print("  Creating expense: \(request.description ?? String(expense.id)) [\(businessLine.name)]")
-                }
-            } else if verbose {
-                print("  Creating expense: \(request.description ?? String(expense.id))")
+                businessTag = businessLine.shortCode
             }
 
             do {
-                if let _ = try await zohoAPI.createExpense(request) {
+                if let _ = try await zohoAPI.createExpense(request, categoryName: categoryName, businessTag: businessTag) {
                     result.recordSuccess()
                 } else if dryRun {
                     result.recordSuccess()

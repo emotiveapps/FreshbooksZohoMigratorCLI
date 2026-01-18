@@ -3,12 +3,14 @@ import Foundation
 struct ExpenseMapperResult {
     let request: ZBExpenseCreateRequest
     let businessLine: BusinessLine?
+    let categoryName: String?
 }
 
 struct ExpenseMapper {
     static func map(
         _ expense: FBExpense,
         accountIdMapping: [Int: String],
+        accountNameMapping: [String: String],  // accountId -> category name
         vendorIdMapping: [Int: String],
         customerIdMapping: [Int: String],
         defaultAccountId: String?,
@@ -16,11 +18,15 @@ struct ExpenseMapper {
         businessTagConfig: BusinessTagConfig? = nil
     ) -> ExpenseMapperResult? {
         let zohoAccountId: String
+        var categoryName: String? = nil
+
         if let categoryId = expense.categoryId,
            let mappedId = accountIdMapping[categoryId] {
             zohoAccountId = mappedId
+            categoryName = accountNameMapping[mappedId]
         } else if let defaultId = defaultAccountId {
             zohoAccountId = defaultId
+            categoryName = accountNameMapping[defaultId] ?? "Uncategorized"
         } else {
             return nil
         }
@@ -87,6 +93,6 @@ struct ExpenseMapper {
             tags: tags
         )
 
-        return ExpenseMapperResult(request: request, businessLine: businessLine)
+        return ExpenseMapperResult(request: request, businessLine: businessLine, categoryName: categoryName)
     }
 }

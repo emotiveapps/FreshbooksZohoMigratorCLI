@@ -166,9 +166,12 @@ actor ZohoAPI {
         return response.invoice
     }
 
-    func createExpense(_ expense: ZBExpenseCreateRequest) async throws -> ZBExpense? {
+    func createExpense(_ expense: ZBExpenseCreateRequest, categoryName: String? = nil, businessTag: String? = nil) async throws -> ZBExpense? {
         if dryRun {
-            print("  [DRY RUN] Would create expense: \(expense.description ?? "unknown")")
+            let desc = expense.description ?? "unknown"
+            let category = categoryName ?? "Unknown"
+            let tag = businessTag ?? "--"
+            print("  [DRY RUN] \(expense.date) | \(tag) | \(category) | \(desc) | $\(String(format: "%.2f", expense.amount))")
             return nil
         }
 
