@@ -15,6 +15,14 @@ struct ZohoMigration: AsyncParsableCommand {
 struct Migrate: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Migrate entities from FreshBooks to Zoho Books",
+        discussion: """
+            Common options for all subcommands:
+              --config <path>    Path to configuration file (default: ./config.json)
+              --dry-run          Perform a dry run without making changes
+              --verbose          Enable verbose output
+
+            Use 'zoho-migration migrate <subcommand> --help' for detailed options.
+            """,
         subcommands: [All.self, Customers.self, Vendors.self, Invoices.self, Expenses.self, Categories.self, Items.self, Taxes.self, Payments.self]
     )
 
