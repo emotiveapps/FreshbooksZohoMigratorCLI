@@ -15,59 +15,30 @@
     "region": "com"
   },
   "categoryMapping": {
+    "_comment": "Note: Zoho Books has system accounts that cannot be deleted. Include them in your categories if you want to use them: Bank Fees and Charges, Cost of Goods Sold, Exchange Gain or Loss, Lodging, Other Expenses, Purchase Discounts, Salaries and Employee Wages, Tax Paid Expense, Uncategorized",
     "categories": [
-      { "name": "Advertising" },
-      {
-        "name": "Car & Truck Expenses",
-        "children": ["Gas", "Mileage", "Repairs", "Vehicle Insurance", "Vehicle Licensing"]
-      },
-      { "name": "Contractors" },
-      {
-        "name": "Cost of Goods Sold",
-        "children": ["Cost of Billed Expenses", "Cost of Shipping & Handling"]
-      },
-      { "name": "Education and Training" },
-      {
-        "name": "Employee Benefits",
-        "children": ["Accident Insurance", "Health Insurance", "Life Insurance"]
-      },
-      {
-        "name": "Meals & Entertainment",
-        "children": ["Entertainment", "Restaurants/Dining"]
-      },
-      {
-        "name": "Office Expenses & Postage",
-        "children": ["Hardware", "Office Supplies", "Packaging", "Postage", "Printing", "Security", "Shipping & Couriers", "Software", "Stationery"]
-      },
-      {
-        "name": "Other Expenses",
-        "children": ["Bank Fees", "Business Insurance", "Commissions", "Depreciation", "Interest - Mortgage", "Interest - Other", "Non-Payroll Taxes", "Online Services", "Reference Materials", "Repairs & Maintenance", "Subscriptions/Dues/Memberships", "Taxes & Licenses", "Wages"]
-      },
-      { "name": "Personal" },
-      {
-        "name": "Professional Services",
-        "children": ["Accounting", "Legal Fees"]
-      },
-      {
-        "name": "Rent or Lease",
-        "children": ["Equipment", "Machinery", "Office Space", "Vehicles"]
-      },
-      {
-        "name": "Supplies",
-        "children": ["Cables & Accessories", "Tools"]
-      },
-      {
-        "name": "Travel",
-        "children": ["Airfare", "Car Rental", "Hotel/Lodging/Accommodation", "Taxi & Parking"]
-      },
-      { "name": "Uncategorized Expenses" },
-      {
-        "name": "Utilities",
-        "children": ["Gas & Electrical", "Internet", "Phone"]
-      }
+      { "name": "Marketing", "children": ["Advertising & Promotion", "Design"] },
+      { "name": "Travel & Transportation", "children": ["Mileage", "Travel"] },
+      { "name": "Cost of Goods Sold" },
+      { "name": "Lodging" },
+      { "name": "Meals & Entertainment" },
+      { "name": "Salaries and Employee Wages", "children": ["Payroll Taxes", "Benefits"] },
+      { "name": "Bank Fees and Charges" },
+      { "name": "Tax Paid Expense" },
+      { "name": "Other Expenses", "children": ["Business Insurance", "Depreciation"] },
+      { "name": "Professional Services" },
+      { "name": "Rent" },
+      { "name": "Uncategorized" },
+      { "name": "Utilities", "children": ["Gas & Electric", "Internet", "Phone"] }
     ],
     "mapping": {
-      "_comment": "Map FreshBooks category names to different Zoho category names if needed. Empty means 1:1 mapping."
+      "_comment": "Map FreshBooks category names to Zoho category names. Unmapped categories use their original name.",
+      "Advertising": "Advertising & Promotion",
+      "Hotel/Lodging/Accommodation": "Lodging",
+      "Wages": "Salaries and Employee Wages",
+      "Bank Service Charges": "Bank Fees and Charges",
+      "Taxes & Licenses": "Tax Paid Expense",
+      "Personal": "Uncategorized"
     }
   },
   "businessTags": {

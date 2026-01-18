@@ -51,7 +51,6 @@ class MigrationService {
     private var vendorIdMapping: [Int: String] = [:]
     private var accountIdMapping: [Int: String] = [:]
     private var configAccountIdMapping: [String: String] = [:]  // category name -> Zoho account ID
-    private var taxIdMapping: [Int: String] = [:]
     private var itemIdMapping: [Int: String] = [:]
     private var invoiceIdMapping: [Int: String] = [:]
     private var defaultExpenseAccountId: String?
@@ -99,9 +98,6 @@ class MigrationService {
         print("")
 
         try await migrateCategories()
-        print("")
-
-        try await migrateTaxes()
         print("")
 
         if includeItems {
@@ -671,84 +667,8 @@ class MigrationService {
         result.printSummary(entityType: "Invoices")
     }
 
-    func migrateTaxes() async throws {
-        print("Migrating taxes...")
-
-        // Fetch existing taxes from Zoho to avoid duplicates
-        print("Fetching existing taxes from Zoho...")
-        let existingTaxes = try await zohoAPI.fetchTaxes()
-        var existingByName: [String: String] = [:] // name (lowercased) -> taxId
-        for tax in existingTaxes {
-            if let taxId = tax.taxId {
-                existingByName[tax.taxName.lowercased()] = taxId
-            }
-        }
-        print("Found \(existingTaxes.count) existing taxes in Zoho")
-
-        print("Fetching taxes from FreshBooks...")
-        let taxes = try await freshBooksAPI.fetchTaxes()
-        print("Found \(taxes.count) taxes")
-
-        var result = MigrationResult()
-        var existingCount = 0
-
-        for tax in taxes {
-            guard let request = TaxMapper.map(tax) else {
-                if verbose {
-                    print("  Skipping tax \(tax.id): invalid or missing name")
-                }
-                result.recordSkip()
-                continue
-            }
-
-            let nameLower = request.taxName.lowercased()
-
-            // Check if tax already exists in Zoho
-            if let existingId = existingByName[nameLower] {
-                taxIdMapping[tax.id] = existingId
-                existingCount += 1
-                if verbose {
-                    print("  [EXISTS] Tax: \(request.taxName)")
-                }
-                result.recordSuccess()
-                continue
-            }
-
-            if verbose {
-                print("  Creating tax: \(request.taxName)")
-            }
-
-            do {
-                if let created = try await zohoAPI.createTax(request) {
-                    if let taxId = created.taxId {
-                        taxIdMapping[tax.id] = taxId
-                    }
-                    result.recordSuccess()
-                } else if dryRun {
-                    // Populate placeholder ID for dependent migrations
-                    taxIdMapping[tax.id] = "dry-run-tax-\(tax.id)"
-                    result.recordSuccess()
-                }
-            } catch {
-                result.recordFailure(entity: tax.displayName, error: error.localizedDescription)
-                if verbose {
-                    print("    Error: \(error.localizedDescription)")
-                }
-            }
-        }
-
-        if existingCount > 0 {
-            print("  (\(existingCount) taxes already existed in Zoho)")
-        }
-        result.printSummary(entityType: "Taxes")
-    }
-
     func migrateItems() async throws {
         print("Migrating items/products...")
-
-        if taxIdMapping.isEmpty && !dryRun {
-            print("Note: No tax ID mappings available. Items will be created without tax associations.")
-        }
 
         // Fetch existing items from Zoho to avoid duplicates
         print("Fetching existing items from Zoho...")
@@ -774,7 +694,7 @@ class MigrationService {
                 continue
             }
 
-            let request = ItemMapper.map(item, taxIdMapping: taxIdMapping)
+            let request = ItemMapper.map(item)
             let nameLower = request.name.lowercased()
 
             // Check if item already exists in Zoho

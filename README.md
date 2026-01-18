@@ -11,13 +11,14 @@ A command-line application written in Swift to migrate data from FreshBooks to Z
 ## Data Migrated
 
 - **Expense Categories** → Chart of Accounts
-- **Taxes** → Tax Rates
 - **Items/Products** → Items *(optional, skipped by default)*
 - **Clients** → Contacts (Customers)
 - **Vendors** → Contacts (Vendors)
 - **Invoices** → Invoices (line items created inline)
 - **Expenses** → Expenses
 - **Payments** → Customer Payments
+
+**Note:** Taxes are not migrated. Zoho Books creates default tax rates during onboarding (e.g., "RI Sales Tax"). Use existing Zoho taxes directly.
 
 ## Prerequisites
 
@@ -138,9 +139,6 @@ swift run ZohoMigration migrate categories
 # Migrate only items/products
 swift run ZohoMigration migrate items
 
-# Migrate only tax rates
-swift run ZohoMigration migrate taxes
-
 # Migrate only customer payments
 swift run ZohoMigration migrate payments
 ```
@@ -188,13 +186,12 @@ swift run ZohoMigration migrate all --help
 When running `migrate all`, entities are migrated in this order:
 
 1. **Categories** → Chart of Accounts (needed for expense account mapping)
-2. **Taxes** → Tax Rates
-3. **Items/Products** → Items *(skipped by default, use `--include-items` to enable)*
-4. **Customers** (needed for invoice and payment customer mapping)
-5. **Vendors**
-6. **Invoices** (uses customer ID mapping; line items created inline)
-7. **Expenses** (uses account, vendor, and customer ID mappings)
-8. **Payments** (uses customer and invoice ID mappings)
+2. **Items/Products** → Items *(skipped by default, use `--include-items` to enable)*
+3. **Customers** (needed for invoice and payment customer mapping)
+4. **Vendors**
+5. **Invoices** (uses customer ID mapping; line items created inline)
+6. **Expenses** (uses account, vendor, and customer ID mappings)
+7. **Payments** (uses customer and invoice ID mappings)
 
 ## Rate Limiting
 
@@ -220,8 +217,6 @@ The tool automatically refreshes OAuth tokens when they expire (401 response).
 - Invoice migration requires customer mapping to exist
 - Expense migration requires account mapping to exist
 - Payment migration requires customer mapping to exist (and optionally invoice mapping)
-- Item migration can optionally use tax ID mapping for tax associations
 - Run categories migration before expenses if migrating separately
 - Run customers migration before invoices if migrating separately
-- Run taxes migration before items if you want tax associations
 - Run customers and invoices before payments if migrating separately
