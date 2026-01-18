@@ -311,11 +311,34 @@ class MigrationService {
         print("Found \(invoices.count) invoices")
 
         var result = MigrationResult()
+        var customersCreatedFromInvoices = 0
 
         for invoice in invoices {
             if invoice.visState != 0 && invoice.visState != nil {
                 result.recordSkip()
                 continue
+            }
+
+            // If customer doesn't exist in mapping, try to create from invoice data
+            if let customerId = invoice.customerId, customerIdMapping[customerId] == nil {
+                let customerRequest = CustomerMapper.mapFromInvoice(invoice)
+
+                do {
+                    if let created = try await zohoAPI.createContact(customerRequest) {
+                        if let contactId = created.contactId {
+                            customerIdMapping[customerId] = contactId
+                            customersCreatedFromInvoices += 1
+                            print("  [CREATED CUSTOMER] '\(customerRequest.contactName)' from invoice \(invoice.invoiceNumber ?? String(invoice.id))")
+                        }
+                    } else if dryRun {
+                        // Populate placeholder ID for dependent migrations
+                        customerIdMapping[customerId] = "dry-run-customer-from-invoice-\(customerId)"
+                        customersCreatedFromInvoices += 1
+                        print("  [DRY RUN] Would create customer '\(customerRequest.contactName)' from invoice \(invoice.invoiceNumber ?? String(invoice.id))")
+                    }
+                } catch {
+                    print("  [WARNING] Could not create customer from invoice \(invoice.invoiceNumber ?? String(invoice.id)): \(error.localizedDescription)")
+                }
             }
 
             guard let request = InvoiceMapper.map(invoice, customerIdMapping: customerIdMapping) else {
@@ -348,6 +371,10 @@ class MigrationService {
                     print("    Error: \(error.localizedDescription)")
                 }
             }
+        }
+
+        if customersCreatedFromInvoices > 0 {
+            print("Created \(customersCreatedFromInvoices) customers from invoice data")
         }
 
         result.printSummary(entityType: "Invoices")
