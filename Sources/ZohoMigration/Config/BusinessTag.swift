@@ -3,7 +3,7 @@ import Foundation
 /// Represents which business line an expense belongs to
 enum BusinessLine: Equatable, Hashable {
     case primary(String)    // e.g., "Emotive Apps (EA)"
-    case secondary(String)  // e.g., "Lucky Frog Bricks (LFB)"
+    case secondary(String)  // e.g., "Lucky Frog Bricks (LF)"
 
     var name: String {
         switch self {

@@ -85,7 +85,7 @@ struct BusinessTagConfig: Codable {
     /// Tag name for the primary business (e.g., "Emotive Apps (EA)")
     let primaryTag: String
 
-    /// Tag name for the secondary business (e.g., "Lucky Frog Bricks (LFB)")
+    /// Tag name for the secondary business (e.g., "Lucky Frog Bricks (LF)")
     let secondaryTag: String
 
     /// Date when secondary business started (format: "YYYY-MM-DD")
