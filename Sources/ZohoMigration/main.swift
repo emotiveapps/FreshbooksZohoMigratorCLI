@@ -15,7 +15,7 @@ struct ZohoMigration: AsyncParsableCommand {
 struct Migrate: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Migrate entities from FreshBooks to Zoho Books",
-        subcommands: [All.self, Customers.self, Vendors.self, Invoices.self, Expenses.self, Categories.self, Items.self, Payments.self]
+        subcommands: [All.self, Customers.self, Vendors.self, Invoices.self, Expenses.self, Categories.self, Items.self, Payments.self, UpdateInvoiceStatuses.self]
     )
 
     @OptionGroup var options: MigrationOptions
@@ -121,6 +121,20 @@ struct Migrate: AsyncParsableCommand {
         func run() async throws {
             let service = try createMigrationService(options: options)
             try await service.migratePayments()
+        }
+    }
+
+    struct UpdateInvoiceStatuses: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "update-invoice-statuses",
+            abstract: "Update status of existing Zoho invoices based on FreshBooks status (e.g., DRAFT -> SENT)"
+        )
+
+        @OptionGroup var options: MigrationOptions
+
+        func run() async throws {
+            let service = try createMigrationService(options: options)
+            try await service.updateInvoiceStatuses()
         }
     }
 }

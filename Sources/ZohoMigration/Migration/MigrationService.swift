@@ -763,11 +763,28 @@ class MigrationService {
                 if let created = try await zohoAPI.createInvoice(request) {
                     if let invoiceId = created.invoiceId {
                         invoiceIdMapping[invoice.id] = invoiceId
+
+                        // Mark invoice as sent if FreshBooks status indicates it was sent
+                        if InvoiceMapper.shouldMarkAsSent(invoice) {
+                            do {
+                                try await zohoAPI.markInvoiceAsSent(invoiceId, invoiceNumber: invoiceNumber)
+                                if verbose {
+                                    print("    Marked as sent (was: \(invoice.v3Status ?? "unknown"))")
+                                }
+                            } catch {
+                                print("  [WARNING] Could not mark invoice \(invoiceNumber) as sent: \(error.localizedDescription)")
+                            }
+                        }
                     }
                     result.recordSuccess()
                 } else if dryRun {
                     // Populate placeholder ID for dependent migrations
                     invoiceIdMapping[invoice.id] = "dry-run-invoice-\(invoice.id)"
+
+                    // Show what would happen with status
+                    if InvoiceMapper.shouldMarkAsSent(invoice) {
+                        print("  [DRY RUN] Would mark invoice \(invoiceNumber) as sent (was: \(invoice.v3Status ?? "unknown"))")
+                    }
                     result.recordSuccess()
                 }
             } catch {
@@ -1016,5 +1033,99 @@ class MigrationService {
         }
 
         result.printSummary(entityType: "Expenses")
+    }
+
+    /// Update status of existing Zoho invoices based on FreshBooks status.
+    /// This fixes invoices that were migrated as DRAFT but should be SENT.
+    func updateInvoiceStatuses() async throws {
+        print("Updating invoice statuses...")
+
+        // Fetch existing invoices from Zoho
+        print("Fetching existing invoices from Zoho...")
+        let zohoInvoices = try await zohoAPI.fetchInvoices()
+        print("Found \(zohoInvoices.count) invoices in Zoho")
+
+        // Build lookup by invoice number
+        var zohoByNumber: [String: ZBInvoice] = [:]
+        for invoice in zohoInvoices {
+            if let number = invoice.invoiceNumber {
+                zohoByNumber[number.lowercased()] = invoice
+            }
+        }
+
+        // Fetch invoices from FreshBooks
+        print("Fetching invoices from FreshBooks...")
+        let fbInvoices = try await freshBooksAPI.fetchInvoices()
+        print("Found \(fbInvoices.count) invoices in FreshBooks")
+
+        var result = MigrationResult()
+        var alreadySentCount = 0
+        var notFoundCount = 0
+
+        for fbInvoice in fbInvoices {
+            // Skip deleted/archived invoices
+            if fbInvoice.visState != 0 && fbInvoice.visState != nil {
+                result.recordSkip()
+                continue
+            }
+
+            let invoiceNumber = fbInvoice.invoiceNumber ?? String(fbInvoice.id)
+            let invoiceNumberLower = invoiceNumber.lowercased()
+
+            // Find matching Zoho invoice
+            guard let zohoInvoice = zohoByNumber[invoiceNumberLower] else {
+                notFoundCount += 1
+                if verbose {
+                    print("  [NOT FOUND] Invoice \(invoiceNumber) not in Zoho")
+                }
+                result.recordSkip()
+                continue
+            }
+
+            // Check if the Zoho invoice is in draft status
+            let zohoStatus = zohoInvoice.status?.lowercased() ?? "unknown"
+            if zohoStatus != "draft" {
+                alreadySentCount += 1
+                if verbose {
+                    print("  [ALREADY \(zohoStatus.uppercased())] Invoice \(invoiceNumber)")
+                }
+                result.recordSkip()
+                continue
+            }
+
+            // Check if FreshBooks says it should be sent
+            guard InvoiceMapper.shouldMarkAsSent(fbInvoice) else {
+                if verbose {
+                    print("  [KEEP DRAFT] Invoice \(invoiceNumber) (FB status: \(fbInvoice.v3Status ?? "unknown"))")
+                }
+                result.recordSkip()
+                continue
+            }
+
+            // Mark as sent
+            guard let zohoInvoiceId = zohoInvoice.invoiceId else {
+                result.recordSkip()
+                continue
+            }
+
+            do {
+                try await zohoAPI.markInvoiceAsSent(zohoInvoiceId, invoiceNumber: invoiceNumber)
+                if !dryRun {
+                    print("  [MARKED SENT] Invoice \(invoiceNumber) (FB status: \(fbInvoice.v3Status ?? "unknown"))")
+                }
+                result.recordSuccess()
+            } catch {
+                result.recordFailure(entity: invoiceNumber, error: error.localizedDescription)
+                print("  [ERROR] Could not mark \(invoiceNumber) as sent: \(error.localizedDescription)")
+            }
+        }
+
+        if alreadySentCount > 0 {
+            print("  (\(alreadySentCount) invoices already had non-draft status)")
+        }
+        if notFoundCount > 0 {
+            print("  (\(notFoundCount) FreshBooks invoices not found in Zoho)")
+        }
+        result.printSummary(entityType: "Invoice Status Updates")
     }
 }

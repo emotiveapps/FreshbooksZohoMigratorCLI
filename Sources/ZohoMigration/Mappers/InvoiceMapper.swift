@@ -1,6 +1,25 @@
 import Foundation
 
 struct InvoiceMapper {
+    /// Determines if a FreshBooks invoice should be marked as "sent" in Zoho Books.
+    /// Returns true if the FreshBooks status indicates it was sent (not draft).
+    static func shouldMarkAsSent(_ invoice: FBInvoice) -> Bool {
+        // Check v3Status first (more reliable string status)
+        if let v3Status = invoice.v3Status?.lowercased() {
+            // If it's anything other than draft, it should be marked as sent
+            return v3Status != "draft"
+        }
+
+        // Fallback to numeric status if v3Status not available
+        // FreshBooks status: 1 = draft, 2 = sent, etc.
+        if let status = invoice.status {
+            return status >= 2
+        }
+
+        // Default to not sent if we can't determine
+        return false
+    }
+
     static func map(_ invoice: FBInvoice, customerIdMapping: [Int: String]) -> ZBInvoiceCreateRequest? {
         guard let customerId = invoice.customerId,
               let zohoCustomerId = customerIdMapping[customerId] else {

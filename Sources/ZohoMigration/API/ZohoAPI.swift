@@ -166,6 +166,17 @@ actor ZohoAPI {
         return response.invoice
     }
 
+    /// Mark an invoice as sent without sending an email to the customer
+    func markInvoiceAsSent(_ invoiceId: String, invoiceNumber: String? = nil) async throws {
+        let displayNum = invoiceNumber ?? invoiceId
+        if dryRun {
+            print("  [DRY RUN] Would mark invoice \(displayNum) as sent")
+            return
+        }
+
+        _ = try await makeRequest(endpoint: "/invoices/\(invoiceId)/status/sent", method: "POST")
+    }
+
     func createExpense(_ expense: ZBExpenseCreateRequest, categoryName: String? = nil, businessTag: String? = nil) async throws -> ZBExpense? {
         if dryRun {
             let desc = expense.description ?? "unknown"
