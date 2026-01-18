@@ -684,6 +684,10 @@ class MigrationService {
             }
         }
         print("Found \(existingInvoices.count) existing invoices in Zoho")
+        if verbose && !existingByNumber.isEmpty {
+            let sampleNumbers = Array(existingByNumber.keys.prefix(5))
+            print("  Sample Zoho invoice numbers: \(sampleNumbers)")
+        }
 
         print("Fetching invoices from FreshBooks...")
         let invoices = try await freshBooksAPI.fetchInvoices()
@@ -705,48 +709,41 @@ class MigrationService {
             if let existingId = existingByNumber[invoiceNumber.lowercased()] {
                 invoiceIdMapping[invoice.id] = existingId
                 existingCount += 1
-                if verbose {
-                    print("  [EXISTS] Invoice: \(invoiceNumber)")
-                }
+                print("  [EXISTS] Invoice: \(invoiceNumber)")
                 result.recordSuccess()
                 continue
             }
 
-            // If customer doesn't exist in mapping, try to create from invoice data
+            // If customer doesn't exist in mapping, check Zoho first, then create if needed
             if let customerId = invoice.customerId, customerIdMapping[customerId] == nil {
                 let customerRequest = CustomerMapper.mapFromInvoice(invoice)
+                let nameLower = customerRequest.contactName.lowercased()
 
-                do {
-                    if let created = try await zohoAPI.createContact(customerRequest) {
-                        if let contactId = created.contactId {
-                            customerIdMapping[customerId] = contactId
-                            customersCreatedFromInvoices += 1
-                            print("  [CREATED CUSTOMER] '\(customerRequest.contactName)' from invoice \(invoiceNumber)")
-                        }
-                    } else if dryRun {
-                        // Populate placeholder ID for dependent migrations
-                        customerIdMapping[customerId] = "dry-run-customer-from-invoice-\(customerId)"
-                        customersCreatedFromInvoices += 1
-                        print("  [DRY RUN] Would create customer '\(customerRequest.contactName)' from invoice \(invoiceNumber)")
+                // First, check if customer already exists in Zoho by name
+                let existingCustomers = try await zohoAPI.fetchContacts(contactType: "customer")
+                if let existing = existingCustomers.first(where: { $0.contactName?.lowercased() == nameLower }) {
+                    if let contactId = existing.contactId {
+                        customerIdMapping[customerId] = contactId
+                        print("  [EXISTS] Customer '\(customerRequest.contactName)' for invoice \(invoiceNumber)")
                     }
-                } catch let error as ZohoError {
-                    // Check if error is "already exists" - if so, fetch and use existing customer
-                    if case .apiError(let code, _) = error, code == 3062 {
-                        let existingCustomers = try await zohoAPI.fetchContacts(contactType: "customer")
-                        let nameLower = customerRequest.contactName.lowercased()
-                        if let existing = existingCustomers.first(where: { $0.contactName?.lowercased() == nameLower }) {
-                            if let contactId = existing.contactId {
+                } else {
+                    // Customer doesn't exist, create it
+                    do {
+                        if let created = try await zohoAPI.createContact(customerRequest) {
+                            if let contactId = created.contactId {
                                 customerIdMapping[customerId] = contactId
-                                print("  [EXISTS] Customer '\(customerRequest.contactName)' found for invoice \(invoiceNumber)")
+                                customersCreatedFromInvoices += 1
+                                print("  [CREATED] Customer '\(customerRequest.contactName)' from invoice \(invoiceNumber)")
                             }
-                        } else {
-                            print("  [WARNING] Could not create customer from invoice \(invoiceNumber): \(error.localizedDescription)")
+                        } else if dryRun {
+                            // Populate placeholder ID for dependent migrations
+                            customerIdMapping[customerId] = "dry-run-customer-from-invoice-\(customerId)"
+                            customersCreatedFromInvoices += 1
+                            print("  [DRY RUN] Would create customer '\(customerRequest.contactName)' from invoice \(invoiceNumber)")
                         }
-                    } else {
+                    } catch {
                         print("  [WARNING] Could not create customer from invoice \(invoiceNumber): \(error.localizedDescription)")
                     }
-                } catch {
-                    print("  [WARNING] Could not create customer from invoice \(invoiceNumber): \(error.localizedDescription)")
                 }
             }
 
