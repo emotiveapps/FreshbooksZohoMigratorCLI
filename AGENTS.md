@@ -1,4 +1,4 @@
-# AI Agent Guide for ZohoMigrationSwiftCLI
+# AI Agent Guide for FreshbooksZohoMigratorCLI
 
 This document helps AI assistants understand the project architecture and make consistent updates.
 
