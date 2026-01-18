@@ -1,13 +1,20 @@
 import Foundation
 
+struct ExpenseMapperResult {
+    let request: ZBExpenseCreateRequest
+    let businessLine: BusinessLine?
+}
+
 struct ExpenseMapper {
     static func map(
         _ expense: FBExpense,
         accountIdMapping: [Int: String],
         vendorIdMapping: [Int: String],
         customerIdMapping: [Int: String],
-        defaultAccountId: String?
-    ) -> ZBExpenseCreateRequest? {
+        defaultAccountId: String?,
+        businessTagHelper: BusinessTagHelper? = nil,
+        businessTagConfig: BusinessTagConfig? = nil
+    ) -> ExpenseMapperResult? {
         let zohoAccountId: String
         if let categoryId = expense.categoryId,
            let mappedId = accountIdMapping[categoryId] {
@@ -41,7 +48,30 @@ struct ExpenseMapper {
             zohoCustomerId = customerIdMapping[clientId]
         }
 
-        return ZBExpenseCreateRequest(
+        // Determine business line if tagging is configured
+        var businessLine: BusinessLine? = nil
+        var tags: [ZBTag]? = nil
+
+        if let helper = businessTagHelper {
+            businessLine = helper.determineBusinessLine(date: expense.date, description: expense.notes)
+
+            // Build tags array if Zoho tag IDs are configured
+            if let tagConfig = businessTagConfig,
+               let tagId = tagConfig.zohoTagId,
+               let primaryOptionId = tagConfig.zohoPrimaryOptionId,
+               let secondaryOptionId = tagConfig.zohoSecondaryOptionId {
+                let tagOptionId: String
+                switch businessLine {
+                case .secondary:
+                    tagOptionId = secondaryOptionId
+                default:
+                    tagOptionId = primaryOptionId
+                }
+                tags = [ZBTag(tagId: tagId, tagOptionId: tagOptionId)]
+            }
+        }
+
+        let request = ZBExpenseCreateRequest(
             accountId: zohoAccountId,
             paidThroughAccountId: nil,
             vendorId: zohoVendorId,
@@ -53,7 +83,10 @@ struct ExpenseMapper {
             projectId: nil,
             currencyCode: expense.amount?.code,
             referenceNumber: expense.transactionId.map { String($0) },
-            description: expense.notes
+            description: expense.notes,
+            tags: tags
         )
+
+        return ExpenseMapperResult(request: request, businessLine: businessLine)
     }
 }

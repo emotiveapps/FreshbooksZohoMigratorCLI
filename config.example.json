@@ -13,5 +13,70 @@
     "refreshToken": "your-refresh-token",
     "organizationId": "your-organization-id",
     "region": "com"
+  },
+  "categoryMapping": {
+    "categories": [
+      { "name": "Advertising" },
+      {
+        "name": "Car & Truck Expenses",
+        "children": ["Gas", "Mileage", "Repairs", "Vehicle Insurance", "Vehicle Licensing"]
+      },
+      { "name": "Contractors" },
+      {
+        "name": "Cost of Goods Sold",
+        "children": ["Cost of Billed Expenses", "Cost of Shipping & Handling"]
+      },
+      { "name": "Education and Training" },
+      {
+        "name": "Employee Benefits",
+        "children": ["Accident Insurance", "Health Insurance", "Life Insurance"]
+      },
+      {
+        "name": "Meals & Entertainment",
+        "children": ["Entertainment", "Restaurants/Dining"]
+      },
+      {
+        "name": "Office Expenses & Postage",
+        "children": ["Hardware", "Office Supplies", "Packaging", "Postage", "Printing", "Security", "Shipping & Couriers", "Software", "Stationery"]
+      },
+      {
+        "name": "Other Expenses",
+        "children": ["Bank Fees", "Business Insurance", "Commissions", "Depreciation", "Interest - Mortgage", "Interest - Other", "Non-Payroll Taxes", "Online Services", "Reference Materials", "Repairs & Maintenance", "Subscriptions/Dues/Memberships", "Taxes & Licenses", "Wages"]
+      },
+      { "name": "Personal" },
+      {
+        "name": "Professional Services",
+        "children": ["Accounting", "Legal Fees"]
+      },
+      {
+        "name": "Rent or Lease",
+        "children": ["Equipment", "Machinery", "Office Space", "Vehicles"]
+      },
+      {
+        "name": "Supplies",
+        "children": ["Cables & Accessories", "Tools"]
+      },
+      {
+        "name": "Travel",
+        "children": ["Airfare", "Car Rental", "Hotel/Lodging/Accommodation", "Taxi & Parking"]
+      },
+      { "name": "Uncategorized Expenses" },
+      {
+        "name": "Utilities",
+        "children": ["Gas & Electrical", "Internet", "Phone"]
+      }
+    ],
+    "mapping": {
+      "_comment": "Map FreshBooks category names to different Zoho category names if needed. Empty means 1:1 mapping."
+    }
+  },
+  "businessTags": {
+    "primaryTag": "Primary Business",
+    "secondaryTag": "Secondary Business",
+    "secondaryStartDate": "2024-01-01",
+    "secondaryKeywords": ["keyword1", "keyword2", "keyword3"],
+    "zohoTagId": null,
+    "zohoPrimaryOptionId": null,
+    "zohoSecondaryOptionId": null
   }
 }

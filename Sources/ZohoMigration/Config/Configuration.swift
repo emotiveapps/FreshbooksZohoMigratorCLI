@@ -3,6 +3,8 @@ import Foundation
 struct Configuration: Codable {
     let freshbooks: FreshBooksConfig
     let zoho: ZohoConfig
+    let categoryMapping: CategoryMappingConfig?
+    let businessTags: BusinessTagConfig?
 
     static func load(from path: String) throws -> Configuration {
         let url = URL(fileURLWithPath: path)
@@ -11,6 +13,92 @@ struct Configuration: Codable {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         return try decoder.decode(Configuration.self, from: data)
     }
+}
+
+/// Configuration for a single category (with optional children for hierarchy)
+struct CategoryConfig: Codable {
+    let name: String
+    let children: [String]?
+
+    init(name: String, children: [String]? = nil) {
+        self.name = name
+        self.children = children
+    }
+}
+
+/// Configuration for hierarchical category mapping
+struct CategoryMappingConfig: Codable {
+    /// Hierarchical list of categories to create in Zoho (with optional children)
+    let categories: [CategoryConfig]
+
+    /// Mapping from FreshBooks category name (case-insensitive) to Zoho category name
+    /// If empty, uses 1:1 mapping (same name in Zoho as FreshBooks)
+    let mapping: [String: String]
+
+    /// Get all parent category names
+    var parentCategories: [String] {
+        return categories.map { $0.name }
+    }
+
+    /// Get children for a parent category
+    func children(for parentName: String) -> [String] {
+        return categories.first { $0.name == parentName }?.children ?? []
+    }
+
+    /// Get all category names (parents and children flattened)
+    var allCategoryNames: [String] {
+        var names: [String] = []
+        for category in categories {
+            names.append(category.name)
+            if let children = category.children {
+                names.append(contentsOf: children)
+            }
+        }
+        return names
+    }
+
+    /// Find which parent a child category belongs to (nil if it's a parent or not found)
+    func parentName(for childName: String) -> String? {
+        for category in categories {
+            if let children = category.children, children.contains(childName) {
+                return category.name
+            }
+        }
+        return nil
+    }
+
+    /// Get the mapped Zoho category for a FreshBooks category name
+    /// Returns the mapped name if found in mapping, otherwise returns the original name
+    func getZohoCategory(for fbCategoryName: String) -> String {
+        let normalized = fbCategoryName.lowercased().trimmingCharacters(in: .whitespaces)
+        // Try mapping first
+        if let result = mapping.first(where: { $0.key.lowercased() == normalized })?.value {
+            return result
+        }
+        // Default to same name (1:1 mapping)
+        return fbCategoryName
+    }
+}
+
+/// Configuration for business line tagging
+struct BusinessTagConfig: Codable {
+    /// Tag name for the primary business (e.g., "Emotive Apps (EA)")
+    let primaryTag: String
+
+    /// Tag name for the secondary business (e.g., "Lucky Frog Bricks (LFB)")
+    let secondaryTag: String
+
+    /// Date when secondary business started (format: "YYYY-MM-DD")
+    /// Expenses before this date are tagged with primaryTag
+    let secondaryStartDate: String
+
+    /// Keywords that indicate secondary business expenses (case-insensitive)
+    let secondaryKeywords: [String]
+
+    /// Zoho tracking category IDs (optional, for actual API calls)
+    let zohoTagId: String?
+    let zohoPrimaryOptionId: String?
+    let zohoSecondaryOptionId: String?
 }
 
 struct FreshBooksConfig: Codable {

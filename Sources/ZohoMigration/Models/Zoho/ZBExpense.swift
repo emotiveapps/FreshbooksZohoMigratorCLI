@@ -75,6 +75,7 @@ struct ZBExpenseCreateRequest: Codable {
     var currencyCode: String?
     var referenceNumber: String?
     var description: String?
+    var tags: [ZBTag]?
 
     enum CodingKeys: String, CodingKey {
         case accountId = "account_id"
@@ -89,5 +90,17 @@ struct ZBExpenseCreateRequest: Codable {
         case currencyCode = "currency_code"
         case referenceNumber = "reference_number"
         case description
+        case tags
+    }
+}
+
+/// Zoho Books tag for tracking categories
+struct ZBTag: Codable {
+    var tagId: String
+    var tagOptionId: String
+
+    enum CodingKeys: String, CodingKey {
+        case tagId = "tag_id"
+        case tagOptionId = "tag_option_id"
     }
 }

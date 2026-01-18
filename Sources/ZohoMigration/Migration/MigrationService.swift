@@ -40,6 +40,7 @@ class MigrationService {
     private let config: Configuration
     private let dryRun: Bool
     private let verbose: Bool
+    private let useConfigMapping: Bool
 
     private let oauthHelper: OAuthHelper
     private let freshBooksAPI: FreshBooksAPI
@@ -48,15 +49,31 @@ class MigrationService {
     private var customerIdMapping: [Int: String] = [:]
     private var vendorIdMapping: [Int: String] = [:]
     private var accountIdMapping: [Int: String] = [:]
+    private var configAccountIdMapping: [String: String] = [:]  // category name -> Zoho account ID
     private var taxIdMapping: [Int: String] = [:]
     private var itemIdMapping: [Int: String] = [:]
     private var invoiceIdMapping: [Int: String] = [:]
     private var defaultExpenseAccountId: String?
 
-    init(config: Configuration, dryRun: Bool, verbose: Bool) {
+    // Helpers initialized from config
+    private var categoryMapping: CategoryMapping?
+    private var businessTagHelper: BusinessTagHelper?
+
+    init(config: Configuration, dryRun: Bool, verbose: Bool, useConfigMapping: Bool = false) {
         self.config = config
         self.dryRun = dryRun
         self.verbose = verbose
+        self.useConfigMapping = useConfigMapping
+
+        // Initialize category mapping if configured
+        if let mappingConfig = config.categoryMapping {
+            self.categoryMapping = CategoryMapping(config: mappingConfig)
+        }
+
+        // Initialize business tag helper if configured
+        if let tagConfig = config.businessTags {
+            self.businessTagHelper = BusinessTagHelper(config: tagConfig)
+        }
 
         self.oauthHelper = OAuthHelper(config: config)
         self.freshBooksAPI = FreshBooksAPI(
@@ -108,6 +125,137 @@ class MigrationService {
     }
 
     func migrateCategories() async throws {
+        if useConfigMapping {
+            try await migrateCategoriesFromConfig()
+        } else {
+            try await migrateCategoriesDirect()
+        }
+    }
+
+    /// Migrate categories using hierarchical Zoho chart of accounts from config
+    private func migrateCategoriesFromConfig() async throws {
+        print("Migrating expense categories to HIERARCHICAL chart of accounts...")
+
+        guard let mapping = categoryMapping else {
+            print("Error: Category mapping not configured. Add 'categoryMapping' section to config.json")
+            return
+        }
+
+        print("Fetching categories from FreshBooks...")
+        let categories = try await freshBooksAPI.fetchCategories()
+        print("Found \(categories.count) FreshBooks categories")
+
+        // Map each FB category to a Zoho category name
+        var categoryToZoho: [Int: String] = [:]
+        var zohoCategoriesNeeded: Set<String> = []
+
+        for category in categories {
+            let zohoName = AccountMapper.mapToZohoCategory(category, using: mapping)
+            categoryToZoho[category.id] = zohoName
+            zohoCategoriesNeeded.insert(zohoName)
+        }
+
+        // Determine which parent categories are needed (for categories that have parents)
+        var parentCategoriesNeeded: Set<String> = []
+        for zohoName in zohoCategoriesNeeded {
+            if let parentName = mapping.parentName(for: zohoName) {
+                parentCategoriesNeeded.insert(parentName)
+            } else if mapping.isParentCategory(zohoName) {
+                parentCategoriesNeeded.insert(zohoName)
+            }
+        }
+
+        print("Will create \(parentCategoriesNeeded.count) parent categories and \(zohoCategoriesNeeded.count) total accounts")
+
+        if dryRun {
+            print("Fetching existing accounts from Zoho (to find default)...")
+        }
+        let existingAccounts = try await zohoAPI.fetchAccounts()
+        defaultExpenseAccountId = existingAccounts.first { $0.accountType == "expense" }?.accountId
+
+        var result = MigrationResult()
+        var parentAccountIds: [String: String] = [:] // parent name -> Zoho account ID
+
+        // Step 1: Create parent categories first
+        print("\nCreating parent categories...")
+        for parentName in parentCategoriesNeeded.sorted() {
+            let isCogs = parentName.lowercased().contains("cost of goods")
+            let request = AccountMapper.createAccount(parentName, parentAccountId: nil, isCogs: isCogs)
+
+            do {
+                if let created = try await zohoAPI.createAccount(request, parentInfo: nil) {
+                    if let accountId = created.accountId {
+                        parentAccountIds[parentName] = accountId
+                        configAccountIdMapping[parentName] = accountId
+                        if defaultExpenseAccountId == nil {
+                            defaultExpenseAccountId = accountId
+                        }
+                    }
+                    result.recordSuccess()
+                } else if dryRun {
+                    let placeholderId = "dry-run-parent-\(parentName.replacingOccurrences(of: " ", with: "-"))"
+                    parentAccountIds[parentName] = placeholderId
+                    configAccountIdMapping[parentName] = placeholderId
+                    if defaultExpenseAccountId == nil {
+                        defaultExpenseAccountId = "dry-run-default-account"
+                    }
+                    result.recordSuccess()
+                }
+            } catch {
+                result.recordFailure(entity: parentName, error: error.localizedDescription)
+            }
+        }
+
+        // Step 2: Create child categories with parent references
+        print("\nCreating child categories...")
+        for zohoName in zohoCategoriesNeeded.sorted() {
+            // Skip if this is a parent category (already created)
+            if parentCategoriesNeeded.contains(zohoName) {
+                continue
+            }
+
+            let parentName = mapping.parentName(for: zohoName)
+            let parentAccountId = parentName.flatMap { parentAccountIds[$0] }
+
+            let isCogs = zohoName.lowercased().contains("cost of")
+            let request = AccountMapper.createAccount(zohoName, parentAccountId: parentAccountId, isCogs: isCogs)
+
+            let parentInfo = parentName.map { " (parent: \($0))" }
+
+            do {
+                if let created = try await zohoAPI.createAccount(request, parentInfo: parentInfo) {
+                    if let accountId = created.accountId {
+                        configAccountIdMapping[zohoName] = accountId
+                        if defaultExpenseAccountId == nil {
+                            defaultExpenseAccountId = accountId
+                        }
+                    }
+                    result.recordSuccess()
+                } else if dryRun {
+                    let placeholderId = "dry-run-child-\(zohoName.replacingOccurrences(of: " ", with: "-"))"
+                    configAccountIdMapping[zohoName] = placeholderId
+                    if defaultExpenseAccountId == nil {
+                        defaultExpenseAccountId = "dry-run-default-account"
+                    }
+                    result.recordSuccess()
+                }
+            } catch {
+                result.recordFailure(entity: zohoName, error: error.localizedDescription)
+            }
+        }
+
+        // Build accountIdMapping from FB category ID -> Zoho account ID
+        for (fbCategoryId, zohoCategory) in categoryToZoho {
+            if let zohoAccountId = configAccountIdMapping[zohoCategory] {
+                accountIdMapping[fbCategoryId] = zohoAccountId
+            }
+        }
+
+        result.printSummary(entityType: "Hierarchical Categories/Accounts")
+    }
+
+    /// Migrate categories using direct 1:1 mapping from FreshBooks
+    private func migrateCategoriesDirect() async throws {
         print("Migrating expense categories to chart of accounts...")
 
         print("Fetching categories from FreshBooks...")
@@ -537,6 +685,7 @@ class MigrationService {
         print("Found \(expenses.count) expenses")
 
         var result = MigrationResult()
+        var tagCounts: [BusinessLine: Int] = [:]
 
         for expense in expenses {
             if expense.visState != 0 && expense.visState != nil {
@@ -544,12 +693,14 @@ class MigrationService {
                 continue
             }
 
-            guard let request = ExpenseMapper.map(
+            guard let mapperResult = ExpenseMapper.map(
                 expense,
                 accountIdMapping: accountIdMapping,
                 vendorIdMapping: vendorIdMapping,
                 customerIdMapping: customerIdMapping,
-                defaultAccountId: defaultExpenseAccountId
+                defaultAccountId: defaultExpenseAccountId,
+                businessTagHelper: businessTagHelper,
+                businessTagConfig: config.businessTags
             ) else {
                 if verbose {
                     print("  Skipping expense \(expense.id): no account mapping and no default")
@@ -558,7 +709,14 @@ class MigrationService {
                 continue
             }
 
-            if verbose {
+            let request = mapperResult.request
+            if let businessLine = mapperResult.businessLine {
+                tagCounts[businessLine, default: 0] += 1
+
+                if verbose {
+                    print("  Creating expense: \(request.description ?? String(expense.id)) [\(businessLine.name)]")
+                }
+            } else if verbose {
                 print("  Creating expense: \(request.description ?? String(expense.id))")
             }
 
@@ -574,6 +732,14 @@ class MigrationService {
                 if verbose {
                     print("    Error: \(error.localizedDescription)")
                 }
+            }
+        }
+
+        // Print tag summary if business tagging is configured
+        if !tagCounts.isEmpty {
+            print("\nExpense Tags Summary:")
+            for (line, count) in tagCounts.sorted(by: { $0.key.name < $1.key.name }) {
+                print("  \(line.name): \(count)")
             }
         }
 

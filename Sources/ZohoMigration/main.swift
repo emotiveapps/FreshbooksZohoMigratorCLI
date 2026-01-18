@@ -145,6 +145,9 @@ struct MigrationOptions: ParsableArguments {
     @Flag(name: .long, help: "Enable verbose output")
     var verbose: Bool = false
 
+    @Flag(name: .long, help: "Use hierarchical category mapping from config (creates parent/child accounts in Zoho)")
+    var useConfigMapping: Bool = false
+
     @Option(name: .long, help: "Path to configuration file")
     var config: String = "./config.json"
 }
@@ -154,6 +157,7 @@ func createMigrationService(options: MigrationOptions) throws -> MigrationServic
     return MigrationService(
         config: config,
         dryRun: options.dryRun,
-        verbose: options.verbose
+        verbose: options.verbose,
+        useConfigMapping: options.useConfigMapping
     )
 }
