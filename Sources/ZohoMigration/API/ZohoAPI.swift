@@ -216,8 +216,8 @@ actor ZohoAPI {
     func fetchAccounts() async throws -> [ZBAccount] {
         let data = try await makeRequest(endpoint: "/chartofaccounts")
 
+        // Don't use .convertFromSnakeCase - conflicts with explicit CodingKeys
         let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
         let response = try decoder.decode(ZBAccountListResponse.self, from: data)
 
         return response.chartOfAccounts ?? []
@@ -319,8 +319,8 @@ actor ZohoAPI {
         }
         let data = try await makeRequest(endpoint: endpoint)
 
+        // Don't use .convertFromSnakeCase - conflicts with explicit CodingKeys
         let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
         let response = try decoder.decode(ZBContactListResponse.self, from: data)
 
         return response.contacts ?? []
