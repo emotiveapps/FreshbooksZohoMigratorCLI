@@ -6,7 +6,7 @@
 
 ---
 
-A command-line application to migrate data from FreshBooks to Zoho Books.
+A command-line application written in Swift to migrate data from FreshBooks to Zoho Books.
 
 ## Data Migrated
 
