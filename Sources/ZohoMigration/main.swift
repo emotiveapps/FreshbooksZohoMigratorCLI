@@ -152,6 +152,9 @@ struct MigrationOptions: ParsableArguments {
     @Flag(name: .long, help: "Include items/products migration (usually unnecessary - invoice line items are created inline)")
     var includeItems: Bool = false
 
+    @Flag(name: .long, help: "Include expense attachments/receipts (downloads from FreshBooks and uploads to Zoho)")
+    var includeAttachments: Bool = false
+
     @Option(name: .long, help: "Path to configuration file")
     var config: String = "./config.json"
 }
@@ -163,6 +166,7 @@ func createMigrationService(options: MigrationOptions) throws -> MigrationServic
         dryRun: options.dryRun,
         verbose: options.verbose,
         useConfigMapping: options.useConfigMapping,
-        includeItems: options.includeItems
+        includeItems: options.includeItems,
+        includeAttachments: options.includeAttachments
     )
 }

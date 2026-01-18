@@ -107,3 +107,34 @@ struct FBExpense: Codable, Identifiable {
         case visState = "vis_state"
     }
 }
+
+/// Detailed expense response with attachment info
+struct FBExpenseDetail: Codable {
+    let id: Int
+    let attachmentId: Int?
+    let hasReceipt: Bool?
+    let attachment: FBAttachment?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case attachmentId = "attachment_id"
+        case hasReceipt = "has_receipt"
+        case attachment
+    }
+}
+
+struct FBAttachment: Codable {
+    let id: Int?
+    let jwt: String?
+    let mediaType: String?
+    let fileName: String?
+    let uuid: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case jwt
+        case mediaType = "media_type"
+        case fileName = "file_name"
+        case uuid
+    }
+}

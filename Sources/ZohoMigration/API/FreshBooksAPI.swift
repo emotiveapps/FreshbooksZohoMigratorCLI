@@ -337,4 +337,105 @@ actor FreshBooksAPI {
 
         return allPayments
     }
+
+    /// Fetch detailed expense info to get attachment ID
+    func fetchExpenseDetails(expenseId: Int) async throws -> FBExpenseDetail? {
+        let endpoint = "/accounting/account/\(accountId)/expenses/expenses/\(expenseId)"
+        let data = try await makeRequest(endpoint: endpoint)
+
+        struct Response: Codable {
+            let response: ResponseBody
+            struct ResponseBody: Codable {
+                let result: ResultBody
+                struct ResultBody: Codable {
+                    let expense: FBExpenseDetail
+                }
+            }
+        }
+
+        let response = try JSONDecoder().decode(Response.self, from: data)
+        return response.response.result.expense
+    }
+
+    /// Download an expense attachment/receipt from FreshBooks
+    /// Returns the file data and suggested filename, or nil if download fails
+    func downloadAttachment(attachmentId: Int) async throws -> (data: Data, filename: String)? {
+        // FreshBooks attachment endpoint
+        let endpoint = "/uploads/images/\(attachmentId)"
+
+        guard let url = URL(string: "\(baseURL)\(endpoint)") else {
+            throw FreshBooksError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+
+        let token = await oauthHelper.freshBooksAccessToken
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        if verbose {
+            print("  GET \(url.absoluteString)")
+        }
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw FreshBooksError.networkError(NSError(domain: "FreshBooks", code: -1, userInfo: nil))
+        }
+
+        if httpResponse.statusCode == 401 {
+            try await oauthHelper.refreshFreshBooksToken()
+            return try await downloadAttachment(attachmentId: attachmentId)
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            if verbose {
+                print("  Failed to download attachment \(attachmentId): HTTP \(httpResponse.statusCode)")
+            }
+            return nil
+        }
+
+        // Try to get filename from Content-Disposition header
+        var filename = "receipt_\(attachmentId)"
+        if let contentDisposition = httpResponse.value(forHTTPHeaderField: "Content-Disposition"),
+           let filenameRange = contentDisposition.range(of: "filename=") {
+            let start = filenameRange.upperBound
+            var extractedName = String(contentDisposition[start...])
+            // Remove quotes if present
+            extractedName = extractedName.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+            // Remove any trailing parameters
+            if let semicolonIndex = extractedName.firstIndex(of: ";") {
+                extractedName = String(extractedName[..<semicolonIndex])
+            }
+            if !extractedName.isEmpty {
+                filename = extractedName
+            }
+        }
+
+        // Add extension based on content type if filename doesn't have one
+        if !filename.contains(".") {
+            if let contentType = httpResponse.value(forHTTPHeaderField: "Content-Type") {
+                let ext: String
+                switch contentType.lowercased() {
+                case let ct where ct.contains("jpeg") || ct.contains("jpg"):
+                    ext = ".jpg"
+                case let ct where ct.contains("png"):
+                    ext = ".png"
+                case let ct where ct.contains("gif"):
+                    ext = ".gif"
+                case let ct where ct.contains("pdf"):
+                    ext = ".pdf"
+                case let ct where ct.contains("webp"):
+                    ext = ".webp"
+                case let ct where ct.contains("heic"):
+                    ext = ".heic"
+                default:
+                    ext = ".jpg" // Default to jpg for receipts
+                }
+                filename += ext
+            }
+        }
+
+        return (data: data, filename: filename)
+    }
 }

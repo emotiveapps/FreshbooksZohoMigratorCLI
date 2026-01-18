@@ -391,4 +391,89 @@ actor ZohoAPI {
 
         return response.customerpayments ?? []
     }
+
+    /// Upload an attachment/receipt to an expense in Zoho Books
+    func uploadExpenseAttachment(expenseId: String, fileData: Data, filename: String) async throws {
+        if dryRun {
+            print("    [DRY RUN] Would upload attachment: \(filename)")
+            return
+        }
+
+        await checkRateLimit()
+
+        var components = URLComponents(string: "\(baseURL)/expenses/\(expenseId)/attachment")!
+        components.queryItems = [URLQueryItem(name: "organization_id", value: organizationId)]
+
+        guard let url = components.url else {
+            throw ZohoError.invalidURL
+        }
+
+        // Create multipart/form-data request
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+
+        let token = await oauthHelper.zohoAccessToken
+        request.setValue("Zoho-oauthtoken \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        // Build multipart body
+        var body = Data()
+
+        // Add file data
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"attachment\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+
+        // Determine content type from filename
+        let contentType: String
+        let lowercaseFilename = filename.lowercased()
+        if lowercaseFilename.hasSuffix(".jpg") || lowercaseFilename.hasSuffix(".jpeg") {
+            contentType = "image/jpeg"
+        } else if lowercaseFilename.hasSuffix(".png") {
+            contentType = "image/png"
+        } else if lowercaseFilename.hasSuffix(".gif") {
+            contentType = "image/gif"
+        } else if lowercaseFilename.hasSuffix(".pdf") {
+            contentType = "application/pdf"
+        } else if lowercaseFilename.hasSuffix(".webp") {
+            contentType = "image/webp"
+        } else if lowercaseFilename.hasSuffix(".heic") {
+            contentType = "image/heic"
+        } else {
+            contentType = "application/octet-stream"
+        }
+
+        body.append("Content-Type: \(contentType)\r\n\r\n".data(using: .utf8)!)
+        body.append(fileData)
+        body.append("\r\n".data(using: .utf8)!)
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+
+        request.httpBody = body
+
+        if verbose {
+            print("    POST \(url.absoluteString) (uploading \(filename), \(fileData.count) bytes)")
+        }
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw ZohoError.networkError(NSError(domain: "Zoho", code: -1, userInfo: nil))
+        }
+
+        if httpResponse.statusCode == 401 {
+            try await oauthHelper.refreshZohoToken()
+            return try await uploadExpenseAttachment(expenseId: expenseId, fileData: fileData, filename: filename)
+        }
+
+        if httpResponse.statusCode == 429 {
+            print("Rate limited, waiting 60 seconds...")
+            try await Task.sleep(nanoseconds: 60_000_000_000)
+            return try await uploadExpenseAttachment(expenseId: expenseId, fileData: fileData, filename: filename)
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw ZohoError.httpError(httpResponse.statusCode, errorMessage)
+        }
+    }
 }

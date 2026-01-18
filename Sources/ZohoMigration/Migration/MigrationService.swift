@@ -42,6 +42,7 @@ class MigrationService {
     private let verbose: Bool
     private let useConfigMapping: Bool
     private let includeItems: Bool
+    private let includeAttachments: Bool
 
     private let oauthHelper: OAuthHelper
     private let freshBooksAPI: FreshBooksAPI
@@ -60,12 +61,13 @@ class MigrationService {
     private var categoryMapping: CategoryMapping?
     private var businessTagHelper: BusinessTagHelper?
 
-    init(config: Configuration, dryRun: Bool, verbose: Bool, useConfigMapping: Bool = false, includeItems: Bool = false) {
+    init(config: Configuration, dryRun: Bool, verbose: Bool, useConfigMapping: Bool = false, includeItems: Bool = false, includeAttachments: Bool = false) {
         self.config = config
         self.dryRun = dryRun
         self.verbose = verbose
         self.useConfigMapping = useConfigMapping
         self.includeItems = includeItems
+        self.includeAttachments = includeAttachments
 
         // Initialize category mapping if configured
         if let mappingConfig = config.categoryMapping {
@@ -977,6 +979,7 @@ class MigrationService {
 
         var result = MigrationResult()
         var tagCounts: [BusinessLine: Int] = [:]
+        var attachmentCount = 0
 
         for expense in expenses {
             if expense.visState != 0 && expense.visState != nil {
@@ -1010,9 +1013,23 @@ class MigrationService {
             }
 
             do {
-                if let _ = try await zohoAPI.createExpense(request, categoryName: categoryName, businessTag: businessTag) {
+                if let created = try await zohoAPI.createExpense(request, categoryName: categoryName, businessTag: businessTag) {
+                    // Handle attachment if enabled and expense has one
+                    if includeAttachments, expense.hasReceipt == true, let zohoExpenseId = created.expenseId {
+                        await migrateExpenseAttachment(
+                            fbExpenseId: expense.id,
+                            zohoExpenseId: zohoExpenseId,
+                            expenseDesc: expense.notes ?? String(expense.id)
+                        )
+                        attachmentCount += 1
+                    }
                     result.recordSuccess()
                 } else if dryRun {
+                    // Show attachment info in dry-run
+                    if includeAttachments, expense.hasReceipt == true {
+                        print("    [DRY RUN] Would download and upload receipt for expense \(expense.id)")
+                        attachmentCount += 1
+                    }
                     result.recordSuccess()
                 }
             } catch {
@@ -1032,7 +1049,59 @@ class MigrationService {
             }
         }
 
+        // Print attachment summary if attachments were processed
+        if attachmentCount > 0 {
+            print("\nAttachments: \(attachmentCount) receipts \(dryRun ? "would be" : "") migrated")
+        }
+
         result.printSummary(entityType: "Expenses")
+    }
+
+    /// Download attachment from FreshBooks and upload to Zoho expense
+    private func migrateExpenseAttachment(fbExpenseId: Int, zohoExpenseId: String, expenseDesc: String) async {
+        do {
+            // First fetch expense details to get attachment ID
+            guard let details = try await freshBooksAPI.fetchExpenseDetails(expenseId: fbExpenseId) else {
+                if verbose {
+                    print("    [WARNING] Could not fetch expense details for \(fbExpenseId)")
+                }
+                return
+            }
+
+            // Get attachment ID from details
+            let attachmentId: Int?
+            if let attId = details.attachmentId {
+                attachmentId = attId
+            } else if let attId = details.attachment?.id {
+                attachmentId = attId
+            } else {
+                if verbose {
+                    print("    [WARNING] No attachment ID found for expense \(fbExpenseId)")
+                }
+                return
+            }
+
+            guard let attId = attachmentId else { return }
+
+            // Download from FreshBooks
+            guard let attachment = try await freshBooksAPI.downloadAttachment(attachmentId: attId) else {
+                if verbose {
+                    print("    [WARNING] Could not download attachment \(attId) for expense: \(expenseDesc)")
+                }
+                return
+            }
+
+            // Upload to Zoho
+            try await zohoAPI.uploadExpenseAttachment(
+                expenseId: zohoExpenseId,
+                fileData: attachment.data,
+                filename: attachment.filename
+            )
+
+            print("    [ATTACHMENT] Uploaded \(attachment.filename) (\(attachment.data.count) bytes)")
+        } catch {
+            print("    [WARNING] Attachment migration failed for expense \(expenseDesc): \(error.localizedDescription)")
+        }
     }
 
     /// Update status of existing Zoho invoices based on FreshBooks status.
