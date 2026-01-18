@@ -41,6 +41,7 @@ class MigrationService {
     private let dryRun: Bool
     private let verbose: Bool
     private let useConfigMapping: Bool
+    private let includeItems: Bool
 
     private let oauthHelper: OAuthHelper
     private let freshBooksAPI: FreshBooksAPI
@@ -59,11 +60,12 @@ class MigrationService {
     private var categoryMapping: CategoryMapping?
     private var businessTagHelper: BusinessTagHelper?
 
-    init(config: Configuration, dryRun: Bool, verbose: Bool, useConfigMapping: Bool = false) {
+    init(config: Configuration, dryRun: Bool, verbose: Bool, useConfigMapping: Bool = false, includeItems: Bool = false) {
         self.config = config
         self.dryRun = dryRun
         self.verbose = verbose
         self.useConfigMapping = useConfigMapping
+        self.includeItems = includeItems
 
         // Initialize category mapping if configured
         if let mappingConfig = config.categoryMapping {
@@ -102,7 +104,11 @@ class MigrationService {
         try await migrateTaxes()
         print("")
 
-        try await migrateItems()
+        if includeItems {
+            try await migrateItems()
+        } else {
+            print("Skipping items/products migration (use --include-items to enable)")
+        }
         print("")
 
         try await migrateCustomers()

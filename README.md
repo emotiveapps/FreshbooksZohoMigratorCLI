@@ -12,10 +12,10 @@ A command-line application written in Swift to migrate data from FreshBooks to Z
 
 - **Expense Categories** → Chart of Accounts
 - **Taxes** → Tax Rates
-- **Items/Products** → Items
+- **Items/Products** → Items *(optional, skipped by default)*
 - **Clients** → Contacts (Customers)
 - **Vendors** → Contacts (Vendors)
-- **Invoices** → Invoices
+- **Invoices** → Invoices (line items created inline)
 - **Expenses** → Expenses
 - **Payments** → Customer Payments
 
@@ -147,18 +147,32 @@ swift run ZohoMigration migrate payments
 
 ### Options
 
-```bash
-# Use a different config file
-swift run ZohoMigration migrate all --config /path/to/config.json
+| Flag | Description |
+|------|-------------|
+| `--dry-run` | Validate and preview changes without making any actual API calls to Zoho |
+| `--verbose` | Enable detailed output showing each entity being processed |
+| `--config <path>` | Use a custom config file (default: `./config.json`) |
+| `--use-config-mapping` | Use hierarchical category mapping from config instead of direct 1:1 FreshBooks category migration. Creates parent/child accounts in Zoho based on the `categoryMapping.categories` structure in config.json |
+| `--include-items` | Include items/products in the migration. **Skipped by default** because FreshBooks items are often one-off service descriptions that don't need to be catalog items in Zoho. Invoice line items are created inline with name, description, rate, and quantity - no catalog item reference required. |
 
+```bash
 # Dry run (validate without making changes)
 swift run ZohoMigration migrate all --dry-run
 
 # Verbose output
 swift run ZohoMigration migrate all --verbose
 
+# Use hierarchical category mapping from config
+swift run ZohoMigration migrate all --use-config-mapping
+
+# Include items migration (usually not needed)
+swift run ZohoMigration migrate all --include-items
+
+# Use a different config file
+swift run ZohoMigration migrate all --config /path/to/config.json
+
 # Combine options
-swift run ZohoMigration migrate all --config ./my-config.json --dry-run --verbose
+swift run ZohoMigration migrate all --dry-run --verbose --use-config-mapping
 ```
 
 ### Help
@@ -174,11 +188,11 @@ swift run ZohoMigration migrate all --help
 When running `migrate all`, entities are migrated in this order:
 
 1. **Categories** → Chart of Accounts (needed for expense account mapping)
-2. **Taxes** → Tax Rates (needed for item tax associations)
-3. **Items/Products** → Items (uses tax ID mapping)
+2. **Taxes** → Tax Rates
+3. **Items/Products** → Items *(skipped by default, use `--include-items` to enable)*
 4. **Customers** (needed for invoice and payment customer mapping)
 5. **Vendors**
-6. **Invoices** (uses customer ID mapping)
+6. **Invoices** (uses customer ID mapping; line items created inline)
 7. **Expenses** (uses account, vendor, and customer ID mappings)
 8. **Payments** (uses customer and invoice ID mappings)
 

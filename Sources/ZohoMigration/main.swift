@@ -148,6 +148,9 @@ struct MigrationOptions: ParsableArguments {
     @Flag(name: .long, help: "Use hierarchical category mapping from config (creates parent/child accounts in Zoho)")
     var useConfigMapping: Bool = false
 
+    @Flag(name: .long, help: "Include items/products migration (usually unnecessary - invoice line items are created inline)")
+    var includeItems: Bool = false
+
     @Option(name: .long, help: "Path to configuration file")
     var config: String = "./config.json"
 }
@@ -158,6 +161,7 @@ func createMigrationService(options: MigrationOptions) throws -> MigrationServic
         config: config,
         dryRun: options.dryRun,
         verbose: options.verbose,
-        useConfigMapping: options.useConfigMapping
+        useConfigMapping: options.useConfigMapping,
+        includeItems: options.includeItems
     )
 }
