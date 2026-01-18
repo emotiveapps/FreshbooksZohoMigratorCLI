@@ -1006,6 +1006,18 @@ class MigrationService {
             print("  Built paid-through mapping with \(paidThroughMapping.count) accounts")
         }
 
+        // Build tax mapping from Zoho taxes (tax name -> tax ID)
+        let zohoTaxes = try await zohoAPI.fetchTaxes()
+        var taxMapping: [String: String] = [:]  // FreshBooks taxName (lowercased) -> Zoho taxId
+        for tax in zohoTaxes {
+            if let id = tax.taxId {
+                taxMapping[tax.taxName.lowercased()] = id
+            }
+        }
+        if verbose {
+            print("  Built tax mapping with \(taxMapping.count) taxes")
+        }
+
         for expense in expenses {
             if expense.visState != 0 && expense.visState != nil {
                 result.recordSkip()
@@ -1019,6 +1031,7 @@ class MigrationService {
                 vendorIdMapping: vendorIdMapping,
                 customerIdMapping: customerIdMapping,
                 paidThroughMapping: paidThroughMapping,
+                taxMapping: taxMapping,
                 defaultAccountId: defaultExpenseAccountId,
                 businessTagHelper: businessTagHelper,
                 businessTagConfig: config.businessTags

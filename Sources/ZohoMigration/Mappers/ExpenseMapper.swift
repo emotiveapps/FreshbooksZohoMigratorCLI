@@ -14,6 +14,7 @@ struct ExpenseMapper {
         vendorIdMapping: [Int: String],
         customerIdMapping: [Int: String],
         paidThroughMapping: [String: String],  // FreshBooks accountName (lowercased) -> Zoho accountId
+        taxMapping: [String: String],          // FreshBooks taxName (lowercased) -> Zoho taxId
         defaultAccountId: String?,
         businessTagHelper: BusinessTagHelper? = nil,
         businessTagConfig: BusinessTagConfig? = nil
@@ -84,13 +85,19 @@ struct ExpenseMapper {
             paidThroughAccountId = paidThroughMapping[fbAccountName]
         }
 
+        // Look up tax ID from FreshBooks taxName1
+        var taxId: String? = nil
+        if let fbTaxName = expense.taxName1?.lowercased() {
+            taxId = taxMapping[fbTaxName]
+        }
+
         let request = ZBExpenseCreateRequest(
             accountId: zohoAccountId,
             paidThroughAccountId: paidThroughAccountId,
             vendorId: zohoVendorId,
             date: date,
             amount: amount,
-            taxId: nil,
+            taxId: taxId,
             isBillable: expense.billable,
             customerId: zohoCustomerId,
             projectId: nil,
