@@ -55,5 +55,18 @@
     "_comment": "Map FreshBooks 'Paid Through' account names to Zoho account names when they differ. Exact matches are handled automatically.",
     "Old Card Name": "New Card Name",
     "Business Checking": "Checking"
+  },
+  "depositAccountMapping": {
+    "_comment": "Map FreshBooks payment gateway/type to Zoho deposit account name. Used for customer payment records.",
+    "stripe": "Checking",
+    "paypal": "PayPal",
+    "check": "Checking",
+    "cash": "Cash",
+    "default": "Checking"
+  },
+  "manualCustomerMapping": {
+    "_comment": "Map FreshBooks client IDs to Zoho customer names. Use for archived/deleted clients that were recreated in Zoho.",
+    "12345": "Customer Name in Zoho",
+    "67890": "Another Customer Name"
   }
 }

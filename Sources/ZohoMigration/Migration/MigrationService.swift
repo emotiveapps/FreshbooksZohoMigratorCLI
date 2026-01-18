@@ -906,6 +906,60 @@ class MigrationService {
         let payments = try await freshBooksAPI.fetchPayments()
         print("Found \(payments.count) payments")
 
+        // Build deposit account mapping from Zoho accounts
+        let allAccounts = try await zohoAPI.fetchAccounts()
+        var accountNameToId: [String: String] = [:] // account name (lowercased) -> Zoho accountId
+        for acct in allAccounts {
+            guard let name = acct.accountName, let id = acct.accountId else { continue }
+            let type = acct.accountType?.lowercased() ?? ""
+            if type == "bank" || type == "cash" {
+                accountNameToId[name.lowercased()] = id
+            }
+        }
+
+        // Convert config's depositAccountMapping (gateway -> account name) to (gateway -> account ID)
+        var depositAccountMapping: [String: String] = [:] // gateway/type (lowercased) -> Zoho accountId
+        if let configMapping = config.depositAccountMapping {
+            for (gatewayOrType, accountName) in configMapping {
+                if gatewayOrType == "_comment" { continue }
+                if let accountId = accountNameToId[accountName.lowercased()] {
+                    depositAccountMapping[gatewayOrType.lowercased()] = accountId
+                }
+            }
+        }
+
+        if verbose {
+            print("  Built deposit account mapping with \(depositAccountMapping.count) entries")
+        }
+
+        // Apply manual customer mapping for archived/deleted clients
+        if let manualMapping = config.manualCustomerMapping {
+            // Fetch Zoho customers to build name -> ID mapping
+            let zohoCustomers = try await zohoAPI.fetchContacts(contactType: "customer")
+            var customerNameToId: [String: String] = [:]
+            for customer in zohoCustomers {
+                if let name = customer.contactName, let id = customer.contactId {
+                    customerNameToId[name.lowercased()] = id
+                }
+            }
+
+            var manualMappingsApplied = 0
+            for (fbClientId, zohoCustomerName) in manualMapping {
+                if fbClientId == "_comment" { continue }
+                guard let clientId = Int(fbClientId) else { continue }
+                if let zohoId = customerNameToId[zohoCustomerName.lowercased()] {
+                    customerIdMapping[clientId] = zohoId
+                    manualMappingsApplied += 1
+                } else if verbose {
+                    print("  Warning: Manual mapping customer '\(zohoCustomerName)' not found in Zoho")
+                }
+            }
+
+            if verbose {
+                print("  Applied \(manualMappingsApplied) manual customer mappings")
+            }
+        }
+
         var result = MigrationResult()
 
         for payment in payments {
@@ -917,10 +971,12 @@ class MigrationService {
             guard let request = PaymentMapper.map(
                 payment,
                 customerIdMapping: customerIdMapping,
-                invoiceIdMapping: invoiceIdMapping
+                invoiceIdMapping: invoiceIdMapping,
+                depositAccountMapping: depositAccountMapping
             ) else {
                 if verbose {
-                    print("  Skipping payment \(payment.id): no customer mapping or invalid amount")
+                    let clientInfo = payment.clientId.map { "clientId=\($0)" } ?? "no client"
+                    print("  Skipping payment \(payment.id) (\(clientInfo)): no customer mapping or invalid amount")
                 }
                 result.recordSkip()
                 continue

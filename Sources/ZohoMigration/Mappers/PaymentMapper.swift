@@ -4,7 +4,8 @@ struct PaymentMapper {
     static func map(
         _ payment: FBPayment,
         customerIdMapping: [Int: String],
-        invoiceIdMapping: [Int: String] = [:]
+        invoiceIdMapping: [Int: String] = [:],
+        depositAccountMapping: [String: String] = [:]  // gateway/type (lowercased) -> Zoho accountId
     ) -> ZBPaymentCreateRequest? {
         guard let clientId = payment.clientId,
               let customerId = customerIdMapping[clientId] else {
@@ -32,6 +33,18 @@ struct PaymentMapper {
             paymentMode = mapPaymentType(type)
         }
 
+        // Determine deposit account based on gateway or type
+        var accountId: String? = nil
+        if let gateway = payment.gateway?.lowercased() {
+            accountId = depositAccountMapping[gateway]
+        }
+        if accountId == nil, let type = payment.type?.lowercased() {
+            accountId = depositAccountMapping[type]
+        }
+        if accountId == nil {
+            accountId = depositAccountMapping["default"]
+        }
+
         return ZBPaymentCreateRequest(
             customerId: customerId,
             invoices: invoices,
@@ -40,7 +53,7 @@ struct PaymentMapper {
             date: date,
             referenceNumber: payment.transactionId ?? payment.orderId,
             description: payment.note,
-            accountId: nil
+            accountId: accountId
         )
     }
 
