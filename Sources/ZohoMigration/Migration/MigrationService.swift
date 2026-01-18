@@ -981,6 +981,31 @@ class MigrationService {
         var tagCounts: [BusinessLine: Int] = [:]
         var attachmentCount = 0
 
+        // Build paid-through account mapping from Zoho accounts
+        let allAccounts = try await zohoAPI.fetchAccounts()
+        var paidThroughMapping: [String: String] = [:] // FreshBooks accountName -> Zoho accountId
+        for acct in allAccounts {
+            guard let name = acct.accountName, let id = acct.accountId else { continue }
+            let type = acct.accountType?.lowercased() ?? ""
+            if type == "bank" || type == "credit_card" || type == "cash" {
+                // Map exact name match
+                paidThroughMapping[name.lowercased()] = id
+            }
+        }
+
+        // Add name variation mappings from config (FreshBooks name -> Zoho name)
+        if let nameMappings = config.paidThroughMapping {
+            for (fbName, zohoName) in nameMappings {
+                if let zohoId = paidThroughMapping[zohoName.lowercased()] {
+                    paidThroughMapping[fbName.lowercased()] = zohoId
+                }
+            }
+        }
+
+        if verbose {
+            print("  Built paid-through mapping with \(paidThroughMapping.count) accounts")
+        }
+
         for expense in expenses {
             if expense.visState != 0 && expense.visState != nil {
                 result.recordSkip()
@@ -993,6 +1018,7 @@ class MigrationService {
                 accountNameMapping: accountNameMapping,
                 vendorIdMapping: vendorIdMapping,
                 customerIdMapping: customerIdMapping,
+                paidThroughMapping: paidThroughMapping,
                 defaultAccountId: defaultExpenseAccountId,
                 businessTagHelper: businessTagHelper,
                 businessTagConfig: config.businessTags

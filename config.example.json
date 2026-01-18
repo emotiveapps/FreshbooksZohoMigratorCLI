@@ -50,5 +50,10 @@
     "zohoTagId": null,
     "zohoPrimaryOptionId": null,
     "zohoSecondaryOptionId": null
+  },
+  "paidThroughMapping": {
+    "_comment": "Map FreshBooks 'Paid Through' account names to Zoho account names when they differ. Exact matches are handled automatically.",
+    "Old Card Name": "New Card Name",
+    "Business Checking": "Checking"
   }
 }

@@ -5,6 +5,7 @@ struct Configuration: Codable {
     let zoho: ZohoConfig
     let categoryMapping: CategoryMappingConfig?
     let businessTags: BusinessTagConfig?
+    let paidThroughMapping: [String: String]?  // FreshBooks account name -> Zoho account name (for variations)
 
     static func load(from path: String) throws -> Configuration {
         let url = URL(fileURLWithPath: path)
