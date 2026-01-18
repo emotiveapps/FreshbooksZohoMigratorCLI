@@ -6,6 +6,12 @@ struct ZBInvoiceResponse: Codable {
     let invoice: ZBInvoice?
 }
 
+struct ZBInvoiceListResponse: Codable {
+    let code: Int
+    let message: String
+    let invoices: [ZBInvoice]?
+}
+
 struct ZBInvoice: Codable {
     var invoiceId: String?
     var invoiceNumber: String?

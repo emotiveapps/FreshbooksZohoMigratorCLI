@@ -6,6 +6,12 @@ struct ZBExpenseResponse: Codable {
     let expense: ZBExpense?
 }
 
+struct ZBExpenseListResponse: Codable {
+    let code: Int
+    let message: String
+    let expenses: [ZBExpense]?
+}
+
 struct ZBExpense: Codable {
     var expenseId: String?
     var accountId: String?

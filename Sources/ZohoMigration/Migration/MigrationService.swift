@@ -147,6 +147,18 @@ class MigrationService {
             return
         }
 
+        // Fetch existing accounts from Zoho to avoid duplicates
+        print("Fetching existing accounts from Zoho...")
+        let existingAccounts = try await zohoAPI.fetchAccounts()
+        var existingByName: [String: String] = [:] // name (lowercased) -> accountId
+        for account in existingAccounts {
+            if let accountId = account.accountId, let name = account.accountName {
+                existingByName[name.lowercased()] = accountId
+            }
+        }
+        print("Found \(existingAccounts.count) existing accounts in Zoho")
+        defaultExpenseAccountId = existingAccounts.first { $0.accountType == "expense" }?.accountId
+
         print("Fetching categories from FreshBooks...")
         let categories = try await freshBooksAPI.fetchCategories()
         print("Found \(categories.count) FreshBooks categories")
@@ -171,20 +183,29 @@ class MigrationService {
             }
         }
 
-        print("Will create \(parentCategoriesNeeded.count) parent categories and \(zohoCategoriesNeeded.count) total accounts")
-
-        if dryRun {
-            print("Fetching existing accounts from Zoho (to find default)...")
-        }
-        let existingAccounts = try await zohoAPI.fetchAccounts()
-        defaultExpenseAccountId = existingAccounts.first { $0.accountType == "expense" }?.accountId
+        print("Need \(parentCategoriesNeeded.count) parent categories and \(zohoCategoriesNeeded.count) total accounts")
 
         var result = MigrationResult()
         var parentAccountIds: [String: String] = [:] // parent name -> Zoho account ID
+        var existingCount = 0
 
         // Step 1: Create parent categories first
-        print("\nCreating parent categories...")
+        print("\nProcessing parent categories...")
         for parentName in parentCategoriesNeeded.sorted() {
+            let nameLower = parentName.lowercased()
+
+            // Check if parent already exists
+            if let existingId = existingByName[nameLower] {
+                parentAccountIds[parentName] = existingId
+                configAccountIdMapping[parentName] = existingId
+                existingCount += 1
+                if verbose {
+                    print("  [EXISTS] Parent: \(parentName)")
+                }
+                result.recordSuccess()
+                continue
+            }
+
             let isCogs = parentName.lowercased().contains("cost of goods")
             let request = AccountMapper.createAccount(parentName, parentAccountId: nil, isCogs: isCogs)
 
@@ -213,23 +234,34 @@ class MigrationService {
         }
 
         // Step 2: Create child categories with parent references
-        print("\nCreating child categories...")
+        print("\nProcessing child categories...")
         for zohoName in zohoCategoriesNeeded.sorted() {
-            // Skip if this is a parent category (already created)
+            // Skip if this is a parent category (already handled)
             if parentCategoriesNeeded.contains(zohoName) {
                 continue
             }
 
+            let nameLower = zohoName.lowercased()
             let parentName = mapping.parentName(for: zohoName)
-            let parentAccountId = parentName.flatMap { parentAccountIds[$0] }
+            let parentInfo = parentName.map { " (parent: \($0))" } ?? ""
 
+            // Check if child already exists
+            if let existingId = existingByName[nameLower] {
+                configAccountIdMapping[zohoName] = existingId
+                existingCount += 1
+                if verbose {
+                    print("  [EXISTS] Child: \(zohoName)\(parentInfo)")
+                }
+                result.recordSuccess()
+                continue
+            }
+
+            let parentAccountId = parentName.flatMap { parentAccountIds[$0] }
             let isCogs = zohoName.lowercased().contains("cost of")
             let request = AccountMapper.createAccount(zohoName, parentAccountId: parentAccountId, isCogs: isCogs)
 
-            let parentInfo = parentName.map { " (parent: \($0))" }
-
             do {
-                if let created = try await zohoAPI.createAccount(request, parentInfo: parentInfo) {
+                if let created = try await zohoAPI.createAccount(request, parentInfo: parentInfo.isEmpty ? nil : parentInfo) {
                     if let accountId = created.accountId {
                         configAccountIdMapping[zohoName] = accountId
                         if defaultExpenseAccountId == nil {
@@ -257,12 +289,27 @@ class MigrationService {
             }
         }
 
+        if existingCount > 0 {
+            print("  (\(existingCount) accounts already existed in Zoho)")
+        }
         result.printSummary(entityType: "Hierarchical Categories/Accounts")
     }
 
     /// Migrate categories using direct 1:1 mapping from FreshBooks
     private func migrateCategoriesDirect() async throws {
         print("Migrating expense categories to chart of accounts...")
+
+        // Fetch existing accounts from Zoho to avoid duplicates
+        print("Fetching existing accounts from Zoho...")
+        let existingAccounts = try await zohoAPI.fetchAccounts()
+        var existingByName: [String: String] = [:] // name (lowercased) -> accountId
+        for account in existingAccounts {
+            if let accountId = account.accountId, let name = account.accountName {
+                existingByName[name.lowercased()] = accountId
+            }
+        }
+        print("Found \(existingAccounts.count) existing accounts in Zoho")
+        defaultExpenseAccountId = existingAccounts.first { $0.accountType == "expense" }?.accountId
 
         print("Fetching categories from FreshBooks...")
         let categories = try await freshBooksAPI.fetchCategories()
@@ -306,17 +353,13 @@ class MigrationService {
             print("Found \(duplicateMapping.count) duplicate categories, reduced to \(uniqueCategories.count) unique categories")
         }
 
-        if dryRun {
-            print("Fetching existing accounts from Zoho (to find default)...")
-        }
-        let existingAccounts = try await zohoAPI.fetchAccounts()
-        defaultExpenseAccountId = existingAccounts.first { $0.accountType == "expense" }?.accountId
-
         var result = MigrationResult()
+        var existingCount = 0
 
         // Process only unique categories
         for category in uniqueCategories {
             let request = AccountMapper.map(category)
+            let nameLower = request.accountName.lowercased()
 
             // Build display name with parent info
             let parentInfo: String
@@ -324,6 +367,17 @@ class MigrationService {
                 parentInfo = " (parent: \(parentName))"
             } else {
                 parentInfo = ""
+            }
+
+            // Check if account already exists in Zoho
+            if let existingId = existingByName[nameLower] {
+                accountIdMapping[category.id] = existingId
+                existingCount += 1
+                if verbose {
+                    print("  [EXISTS] Account: \(request.accountName)\(parentInfo)")
+                }
+                result.recordSuccess()
+                continue
             }
 
             if verbose {
@@ -363,17 +417,32 @@ class MigrationService {
             }
         }
 
+        if existingCount > 0 {
+            print("  (\(existingCount) accounts already existed in Zoho)")
+        }
         result.printSummary(entityType: "Categories/Accounts")
     }
 
     func migrateCustomers() async throws {
         print("Migrating clients to customers...")
 
+        // Fetch existing customers from Zoho to avoid duplicates
+        print("Fetching existing customers from Zoho...")
+        let existingCustomers = try await zohoAPI.fetchContacts(contactType: "customer")
+        var existingByName: [String: String] = [:] // name -> contactId
+        for customer in existingCustomers {
+            if let contactId = customer.contactId {
+                existingByName[customer.contactName.lowercased()] = contactId
+            }
+        }
+        print("Found \(existingCustomers.count) existing customers in Zoho")
+
         print("Fetching clients from FreshBooks...")
         let clients = try await freshBooksAPI.fetchClients()
         print("Found \(clients.count) clients")
 
         var result = MigrationResult()
+        var existingCount = 0
 
         for client in clients {
             if client.visState != 0 && client.visState != nil {
@@ -382,6 +451,18 @@ class MigrationService {
             }
 
             let request = CustomerMapper.map(client)
+            let nameLower = request.contactName.lowercased()
+
+            // Check if customer already exists in Zoho
+            if let existingId = existingByName[nameLower] {
+                customerIdMapping[client.id] = existingId
+                existingCount += 1
+                if verbose {
+                    print("  [EXISTS] Customer: \(request.contactName)")
+                }
+                result.recordSuccess()
+                continue
+            }
 
             if verbose {
                 print("  Creating customer: \(request.contactName)")
@@ -406,17 +487,32 @@ class MigrationService {
             }
         }
 
+        if existingCount > 0 {
+            print("  (\(existingCount) customers already existed in Zoho)")
+        }
         result.printSummary(entityType: "Customers")
     }
 
     func migrateVendors() async throws {
         print("Migrating vendors...")
 
+        // Fetch existing vendors from Zoho to avoid duplicates
+        print("Fetching existing vendors from Zoho...")
+        let existingVendors = try await zohoAPI.fetchContacts(contactType: "vendor")
+        var existingByName: [String: String] = [:] // name -> contactId
+        for vendor in existingVendors {
+            if let contactId = vendor.contactId {
+                existingByName[vendor.contactName.lowercased()] = contactId
+            }
+        }
+        print("Found \(existingVendors.count) existing vendors in Zoho")
+
         print("Fetching vendors from FreshBooks...")
         let vendors = try await freshBooksAPI.fetchVendors()
         print("Found \(vendors.count) vendors")
 
         var result = MigrationResult()
+        var existingCount = 0
 
         for vendor in vendors {
             if vendor.visState != 0 && vendor.visState != nil {
@@ -425,6 +521,18 @@ class MigrationService {
             }
 
             let request = VendorMapper.map(vendor)
+            let nameLower = request.contactName.lowercased()
+
+            // Check if vendor already exists in Zoho
+            if let existingId = existingByName[nameLower] {
+                vendorIdMapping[vendor.id] = existingId
+                existingCount += 1
+                if verbose {
+                    print("  [EXISTS] Vendor: \(request.contactName)")
+                }
+                result.recordSuccess()
+                continue
+            }
 
             if verbose {
                 print("  Creating vendor: \(request.contactName)")
@@ -449,6 +557,9 @@ class MigrationService {
             }
         }
 
+        if existingCount > 0 {
+            print("  (\(existingCount) vendors already existed in Zoho)")
+        }
         result.printSummary(entityType: "Vendors")
     }
 
@@ -460,16 +571,41 @@ class MigrationService {
             try await migrateCustomers()
         }
 
+        // Fetch existing invoices from Zoho to avoid duplicates
+        print("Fetching existing invoices from Zoho...")
+        let existingInvoices = try await zohoAPI.fetchInvoices()
+        var existingByNumber: [String: String] = [:] // invoice number -> invoiceId
+        for inv in existingInvoices {
+            if let invoiceId = inv.invoiceId, let number = inv.invoiceNumber {
+                existingByNumber[number.lowercased()] = invoiceId
+            }
+        }
+        print("Found \(existingInvoices.count) existing invoices in Zoho")
+
         print("Fetching invoices from FreshBooks...")
         let invoices = try await freshBooksAPI.fetchInvoices()
         print("Found \(invoices.count) invoices")
 
         var result = MigrationResult()
         var customersCreatedFromInvoices = 0
+        var existingCount = 0
 
         for invoice in invoices {
             if invoice.visState != 0 && invoice.visState != nil {
                 result.recordSkip()
+                continue
+            }
+
+            let invoiceNumber = invoice.invoiceNumber ?? String(invoice.id)
+
+            // Check if invoice already exists in Zoho
+            if let existingId = existingByNumber[invoiceNumber.lowercased()] {
+                invoiceIdMapping[invoice.id] = existingId
+                existingCount += 1
+                if verbose {
+                    print("  [EXISTS] Invoice: \(invoiceNumber)")
+                }
+                result.recordSuccess()
                 continue
             }
 
@@ -482,22 +618,22 @@ class MigrationService {
                         if let contactId = created.contactId {
                             customerIdMapping[customerId] = contactId
                             customersCreatedFromInvoices += 1
-                            print("  [CREATED CUSTOMER] '\(customerRequest.contactName)' from invoice \(invoice.invoiceNumber ?? String(invoice.id))")
+                            print("  [CREATED CUSTOMER] '\(customerRequest.contactName)' from invoice \(invoiceNumber)")
                         }
                     } else if dryRun {
                         // Populate placeholder ID for dependent migrations
                         customerIdMapping[customerId] = "dry-run-customer-from-invoice-\(customerId)"
                         customersCreatedFromInvoices += 1
-                        print("  [DRY RUN] Would create customer '\(customerRequest.contactName)' from invoice \(invoice.invoiceNumber ?? String(invoice.id))")
+                        print("  [DRY RUN] Would create customer '\(customerRequest.contactName)' from invoice \(invoiceNumber)")
                     }
                 } catch {
-                    print("  [WARNING] Could not create customer from invoice \(invoice.invoiceNumber ?? String(invoice.id)): \(error.localizedDescription)")
+                    print("  [WARNING] Could not create customer from invoice \(invoiceNumber): \(error.localizedDescription)")
                 }
             }
 
             guard let request = InvoiceMapper.map(invoice, customerIdMapping: customerIdMapping) else {
                 if verbose {
-                    print("  Skipping invoice \(invoice.invoiceNumber ?? String(invoice.id)): no customer mapping")
+                    print("  Skipping invoice \(invoiceNumber): no customer mapping")
                 }
                 result.recordSkip()
                 continue
@@ -519,8 +655,7 @@ class MigrationService {
                     result.recordSuccess()
                 }
             } catch {
-                let invoiceDesc = invoice.invoiceNumber ?? String(invoice.id)
-                result.recordFailure(entity: invoiceDesc, error: error.localizedDescription)
+                result.recordFailure(entity: invoiceNumber, error: error.localizedDescription)
                 if verbose {
                     print("    Error: \(error.localizedDescription)")
                 }
@@ -530,18 +665,32 @@ class MigrationService {
         if customersCreatedFromInvoices > 0 {
             print("Created \(customersCreatedFromInvoices) customers from invoice data")
         }
-
+        if existingCount > 0 {
+            print("  (\(existingCount) invoices already existed in Zoho)")
+        }
         result.printSummary(entityType: "Invoices")
     }
 
     func migrateTaxes() async throws {
         print("Migrating taxes...")
 
+        // Fetch existing taxes from Zoho to avoid duplicates
+        print("Fetching existing taxes from Zoho...")
+        let existingTaxes = try await zohoAPI.fetchTaxes()
+        var existingByName: [String: String] = [:] // name (lowercased) -> taxId
+        for tax in existingTaxes {
+            if let taxId = tax.taxId {
+                existingByName[tax.taxName.lowercased()] = taxId
+            }
+        }
+        print("Found \(existingTaxes.count) existing taxes in Zoho")
+
         print("Fetching taxes from FreshBooks...")
         let taxes = try await freshBooksAPI.fetchTaxes()
         print("Found \(taxes.count) taxes")
 
         var result = MigrationResult()
+        var existingCount = 0
 
         for tax in taxes {
             guard let request = TaxMapper.map(tax) else {
@@ -549,6 +698,19 @@ class MigrationService {
                     print("  Skipping tax \(tax.id): invalid or missing name")
                 }
                 result.recordSkip()
+                continue
+            }
+
+            let nameLower = request.taxName.lowercased()
+
+            // Check if tax already exists in Zoho
+            if let existingId = existingByName[nameLower] {
+                taxIdMapping[tax.id] = existingId
+                existingCount += 1
+                if verbose {
+                    print("  [EXISTS] Tax: \(request.taxName)")
+                }
+                result.recordSuccess()
                 continue
             }
 
@@ -575,6 +737,9 @@ class MigrationService {
             }
         }
 
+        if existingCount > 0 {
+            print("  (\(existingCount) taxes already existed in Zoho)")
+        }
         result.printSummary(entityType: "Taxes")
     }
 
@@ -585,11 +750,23 @@ class MigrationService {
             print("Note: No tax ID mappings available. Items will be created without tax associations.")
         }
 
+        // Fetch existing items from Zoho to avoid duplicates
+        print("Fetching existing items from Zoho...")
+        let existingItems = try await zohoAPI.fetchItems()
+        var existingByName: [String: String] = [:] // name (lowercased) -> itemId
+        for item in existingItems {
+            if let itemId = item.itemId {
+                existingByName[item.name.lowercased()] = itemId
+            }
+        }
+        print("Found \(existingItems.count) existing items in Zoho")
+
         print("Fetching items from FreshBooks...")
         let items = try await freshBooksAPI.fetchItems()
         print("Found \(items.count) items")
 
         var result = MigrationResult()
+        var existingCount = 0
 
         for item in items {
             if item.visState != 0 && item.visState != nil {
@@ -598,6 +775,18 @@ class MigrationService {
             }
 
             let request = ItemMapper.map(item, taxIdMapping: taxIdMapping)
+            let nameLower = request.name.lowercased()
+
+            // Check if item already exists in Zoho
+            if let existingId = existingByName[nameLower] {
+                itemIdMapping[item.id] = existingId
+                existingCount += 1
+                if verbose {
+                    print("  [EXISTS] Item: \(request.name)")
+                }
+                result.recordSuccess()
+                continue
+            }
 
             if verbose {
                 print("  Creating item: \(request.name)")
@@ -622,6 +811,9 @@ class MigrationService {
             }
         }
 
+        if existingCount > 0 {
+            print("  (\(existingCount) items already existed in Zoho)")
+        }
         result.printSummary(entityType: "Items/Products")
     }
 
@@ -631,6 +823,24 @@ class MigrationService {
         if customerIdMapping.isEmpty && !dryRun {
             print("Warning: No customer ID mappings available. Running customer migration first...")
             try await migrateCustomers()
+        }
+
+        // Check for existing payments in Zoho (potential duplicates warning)
+        if !dryRun {
+            print("Checking for existing payments in Zoho...")
+            let existingPayments = try await zohoAPI.fetchPayments()
+            if !existingPayments.isEmpty {
+                print("\n⚠️  There are \(existingPayments.count) existing payments in Zoho Books.")
+                print("   Migrating may create duplicates if records were already migrated.")
+                print("   Do you want to continue? (y/N): ", terminator: "")
+
+                if let response = readLine()?.lowercased(), response == "y" || response == "yes" {
+                    print("   Continuing with payment migration...")
+                } else {
+                    print("   Skipping payment migration.")
+                    return
+                }
+            }
         }
 
         print("Fetching payments from FreshBooks...")
@@ -684,6 +894,24 @@ class MigrationService {
         if accountIdMapping.isEmpty && !dryRun {
             print("Warning: No account ID mappings available. Running category migration first...")
             try await migrateCategories()
+        }
+
+        // Check for existing expenses in Zoho (potential duplicates warning)
+        if !dryRun {
+            print("Checking for existing expenses in Zoho...")
+            let existingExpenses = try await zohoAPI.fetchExpenses()
+            if !existingExpenses.isEmpty {
+                print("\n⚠️  There are \(existingExpenses.count) existing expenses in Zoho Books.")
+                print("   Migrating may create duplicates if records were already migrated.")
+                print("   Do you want to continue? (y/N): ", terminator: "")
+
+                if let response = readLine()?.lowercased(), response == "y" || response == "yes" {
+                    print("   Continuing with expense migration...")
+                } else {
+                    print("   Skipping expense migration.")
+                    return
+                }
+            }
         }
 
         print("Fetching expenses from FreshBooks...")

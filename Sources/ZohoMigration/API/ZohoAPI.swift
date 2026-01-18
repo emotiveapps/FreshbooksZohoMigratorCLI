@@ -311,4 +311,48 @@ actor ZohoAPI {
 
         return response.items ?? []
     }
+
+    func fetchContacts(contactType: String? = nil) async throws -> [ZBContact] {
+        var endpoint = "/contacts"
+        if let type = contactType {
+            endpoint += "?contact_type=\(type)"
+        }
+        let data = try await makeRequest(endpoint: endpoint)
+
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let response = try decoder.decode(ZBContactListResponse.self, from: data)
+
+        return response.contacts ?? []
+    }
+
+    func fetchInvoices() async throws -> [ZBInvoice] {
+        let data = try await makeRequest(endpoint: "/invoices")
+
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let response = try decoder.decode(ZBInvoiceListResponse.self, from: data)
+
+        return response.invoices ?? []
+    }
+
+    func fetchExpenses() async throws -> [ZBExpense] {
+        let data = try await makeRequest(endpoint: "/expenses")
+
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let response = try decoder.decode(ZBExpenseListResponse.self, from: data)
+
+        return response.expenses ?? []
+    }
+
+    func fetchPayments() async throws -> [ZBPayment] {
+        let data = try await makeRequest(endpoint: "/customerpayments")
+
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let response = try decoder.decode(ZBPaymentListResponse.self, from: data)
+
+        return response.customerpayments ?? []
+    }
 }

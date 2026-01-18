@@ -6,6 +6,12 @@ struct ZBContactResponse: Codable {
     let contact: ZBContact?
 }
 
+struct ZBContactListResponse: Codable {
+    let code: Int
+    let message: String
+    let contacts: [ZBContact]?
+}
+
 struct ZBContact: Codable {
     var contactId: String?
     var contactName: String
