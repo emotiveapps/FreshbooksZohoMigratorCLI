@@ -303,12 +303,16 @@ class MigrationService {
 
                     // If parent should be set but isn't, or is different, update it
                     if let expected = expectedParentId, currentParentId != expected {
-                        let updateRequest = ZBAccountUpdateRequest(parentAccountId: expected)
-                        do {
-                            _ = try await zohoAPI.updateAccount(existingId, request: updateRequest)
-                            print("  [UPDATED] Child: \(zohoName) - set parent to '\(parentName ?? "unknown")'")
-                        } catch {
-                            print("  [WARNING] Could not update parent for '\(zohoName)': \(error.localizedDescription)")
+                        if dryRun {
+                            print("  [WOULD UPDATE] Child: \(zohoName) - set parent to '\(parentName ?? "unknown")'")
+                        } else {
+                            let updateRequest = ZBAccountUpdateRequest(parentAccountId: expected)
+                            do {
+                                _ = try await zohoAPI.updateAccount(existingId, request: updateRequest)
+                                print("  [UPDATED] Child: \(zohoName) - set parent to '\(parentName ?? "unknown")'")
+                            } catch {
+                                print("  [WARNING] Could not update parent for '\(zohoName)': \(error.localizedDescription)")
+                            }
                         }
                     } else if verbose {
                         print("  [EXISTS] Child: \(zohoName)\(parentInfo)")
