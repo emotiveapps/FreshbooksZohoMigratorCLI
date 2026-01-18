@@ -213,6 +213,28 @@ actor ZohoAPI {
         return response.chartOfAccount
     }
 
+    func updateAccount(_ accountId: String, request: ZBAccountUpdateRequest) async throws -> ZBAccount? {
+        if dryRun {
+            print("  [DRY RUN] Would update account: \(accountId)")
+            return nil
+        }
+
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        let body = try encoder.encode(request)
+
+        let data = try await makeRequest(endpoint: "/chartofaccounts/\(accountId)", method: "PUT", body: body)
+
+        let decoder = JSONDecoder()
+        let response = try decoder.decode(ZBAccountResponse.self, from: data)
+
+        if response.code != 0 {
+            throw ZohoError.apiError(response.code, response.message)
+        }
+
+        return response.chartOfAccount
+    }
+
     func fetchAccounts() async throws -> [ZBAccount] {
         let data = try await makeRequest(endpoint: "/chartofaccounts")
 

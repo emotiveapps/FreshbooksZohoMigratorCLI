@@ -68,6 +68,16 @@ struct ZBAccountCreateRequest: Codable {
     }
 }
 
+struct ZBAccountUpdateRequest: Codable {
+    var accountName: String?
+    var parentAccountId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case accountName = "account_name"
+        case parentAccountId = "parent_account_id"
+    }
+}
+
 enum ZBAccountType: String, Codable {
     case otherAsset = "other_asset"
     case otherCurrentAsset = "other_current_asset"

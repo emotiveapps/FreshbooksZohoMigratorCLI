@@ -147,9 +147,11 @@ class MigrationService {
         print("Fetching existing accounts from Zoho...")
         let existingAccounts = try await zohoAPI.fetchAccounts()
         var existingByName: [String: String] = [:] // name (lowercased) -> accountId
+        var existingAccountsByName: [String: ZBAccount] = [:] // name (lowercased) -> full account
         for account in existingAccounts {
             if let accountId = account.accountId, let name = account.accountName {
                 existingByName[name.lowercased()] = accountId
+                existingAccountsByName[name.lowercased()] = account
             }
         }
         print("Found \(existingAccounts.count) existing accounts in Zoho")
@@ -276,26 +278,57 @@ class MigrationService {
             let parentName = mapping.parentName(for: zohoName)
             let parentInfo = parentName.map { " (parent: \($0))" } ?? ""
 
+            // Determine expected parent ID first
+            var expectedParentId = parentName.flatMap { parentAccountIds[$0] }
+
+            // If parent not in our mapping but exists in Zoho, use that
+            if expectedParentId == nil, let pName = parentName {
+                let parentLower = pName.lowercased()
+                if let existingParentId = existingByName[parentLower] {
+                    expectedParentId = existingParentId
+                    parentAccountIds[pName] = existingParentId  // Cache for future children
+                    if verbose {
+                        print("  [FOUND PARENT] '\(pName)' exists in Zoho for child '\(zohoName)'")
+                    }
+                }
+            }
+
             // Check if child already exists
             if let existingId = existingByName[nameLower] {
                 configAccountIdMapping[zohoName] = existingId
-                existingCount += 1
-                if verbose {
+
+                // Check if the existing account has the correct parent
+                if let existingAccount = existingAccountsByName[nameLower] {
+                    let currentParentId = existingAccount.parentAccountId
+
+                    // If parent should be set but isn't, or is different, update it
+                    if let expected = expectedParentId, currentParentId != expected {
+                        let updateRequest = ZBAccountUpdateRequest(parentAccountId: expected)
+                        do {
+                            _ = try await zohoAPI.updateAccount(existingId, request: updateRequest)
+                            print("  [UPDATED] Child: \(zohoName) - set parent to '\(parentName ?? "unknown")'")
+                        } catch {
+                            print("  [WARNING] Could not update parent for '\(zohoName)': \(error.localizedDescription)")
+                        }
+                    } else if verbose {
+                        print("  [EXISTS] Child: \(zohoName)\(parentInfo)")
+                    }
+                } else if verbose {
                     print("  [EXISTS] Child: \(zohoName)\(parentInfo)")
                 }
+
+                existingCount += 1
                 result.recordSuccess()
                 continue
             }
 
-            let parentAccountId = parentName.flatMap { parentAccountIds[$0] }
-
-            // Warn if parent should exist but ID wasn't found
-            if parentName != nil && parentAccountId == nil && !dryRun {
+            // Warn if parent should exist but ID wasn't found anywhere
+            if parentName != nil && expectedParentId == nil && !dryRun {
                 print("  [WARNING] Parent '\(parentName!)' not found for child '\(zohoName)' - will create as top-level")
             }
 
             let isCogs = zohoName.lowercased().contains("cost of")
-            let request = AccountMapper.createAccount(zohoName, parentAccountId: parentAccountId, isCogs: isCogs)
+            let request = AccountMapper.createAccount(zohoName, parentAccountId: expectedParentId, isCogs: isCogs)
 
             do {
                 if let created = try await zohoAPI.createAccount(request, parentInfo: parentInfo.isEmpty ? nil : parentInfo) {
@@ -682,6 +715,22 @@ class MigrationService {
                         customerIdMapping[customerId] = "dry-run-customer-from-invoice-\(customerId)"
                         customersCreatedFromInvoices += 1
                         print("  [DRY RUN] Would create customer '\(customerRequest.contactName)' from invoice \(invoiceNumber)")
+                    }
+                } catch let error as ZohoError {
+                    // Check if error is "already exists" - if so, fetch and use existing customer
+                    if case .apiError(let code, _) = error, code == 3062 {
+                        let existingCustomers = try await zohoAPI.fetchContacts(contactType: "customer")
+                        let nameLower = customerRequest.contactName.lowercased()
+                        if let existing = existingCustomers.first(where: { $0.contactName?.lowercased() == nameLower }) {
+                            if let contactId = existing.contactId {
+                                customerIdMapping[customerId] = contactId
+                                print("  [EXISTS] Customer '\(customerRequest.contactName)' found for invoice \(invoiceNumber)")
+                            }
+                        } else {
+                            print("  [WARNING] Could not create customer from invoice \(invoiceNumber): \(error.localizedDescription)")
+                        }
+                    } else {
+                        print("  [WARNING] Could not create customer from invoice \(invoiceNumber): \(error.localizedDescription)")
                     }
                 } catch {
                     print("  [WARNING] Could not create customer from invoice \(invoiceNumber): \(error.localizedDescription)")

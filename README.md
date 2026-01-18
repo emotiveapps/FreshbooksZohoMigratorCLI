@@ -112,6 +112,13 @@ It will not compile when an iOS device is selected.
 
 ## Usage
 
+### Sample Command
+This is the actual command I used in prod
+
+```bash
+swift run ZohoMigration migrate all --use-config-mapping --verbose 2>&1 | tee actual-run-output-3.txt
+```
+
 ### Migrate All Data
 
 ```bash
