@@ -100,6 +100,15 @@ For a release build:
 swift build -c release
 ```
 
+## Editing in Xcode
+
+```bash
+open Package.swift
+```
+
+This project can only be built on macOS devices.
+It will not compile when an iOS device is selected.
+
 ## Usage
 
 ### Migrate All Data
