@@ -114,6 +114,44 @@ class MigrationService {
         let categories = try await freshBooksAPI.fetchCategories()
         print("Found \(categories.count) categories")
 
+        // Build a lookup for parent category names
+        let categoryLookup = Dictionary(uniqueKeysWithValues: categories.map { ($0.id, $0.name) })
+
+        // Detect and report duplicates, then deduplicate
+        var seenCategories: [String: FBCategory] = [:] // deduplicationKey -> first category
+        var duplicateMapping: [Int: Int] = [:] // duplicate category ID -> canonical category ID
+        var uniqueCategories: [FBCategory] = []
+
+        for category in categories {
+            let key = category.deduplicationKey
+            if let existing = seenCategories[key] {
+                // This is a duplicate
+                duplicateMapping[category.id] = existing.id
+
+                // Report the duplicate and any differences
+                let differences = category.differences(from: existing)
+                let parentName = category.parentId.flatMap { categoryLookup[$0] }
+                let parentInfo = parentName.map { " (parent: \($0))" } ?? ""
+
+                if differences.isEmpty {
+                    print("  [DUPLICATE] '\(category.name)'\(parentInfo) - IDs \(existing.id) and \(category.id) are identical, merging")
+                } else {
+                    print("  [DUPLICATE] '\(category.name)'\(parentInfo) - IDs \(existing.id) and \(category.id) differ:")
+                    for diff in differences {
+                        print("    - \(diff)")
+                    }
+                    print("    -> Merging to use ID \(existing.id)")
+                }
+            } else {
+                seenCategories[key] = category
+                uniqueCategories.append(category)
+            }
+        }
+
+        if !duplicateMapping.isEmpty {
+            print("Found \(duplicateMapping.count) duplicate categories, reduced to \(uniqueCategories.count) unique categories")
+        }
+
         if dryRun {
             print("Fetching existing accounts from Zoho (to find default)...")
         }
@@ -122,15 +160,24 @@ class MigrationService {
 
         var result = MigrationResult()
 
-        for category in categories {
+        // Process only unique categories
+        for category in uniqueCategories {
             let request = AccountMapper.map(category)
 
+            // Build display name with parent info
+            let parentInfo: String
+            if let parentId = category.parentId, let parentName = categoryLookup[parentId] {
+                parentInfo = " (parent: \(parentName))"
+            } else {
+                parentInfo = ""
+            }
+
             if verbose {
-                print("  Creating account: \(request.accountName)")
+                print("  Creating account: \(request.accountName)\(parentInfo)")
             }
 
             do {
-                if let created = try await zohoAPI.createAccount(request) {
+                if let created = try await zohoAPI.createAccount(request, parentInfo: parentInfo.isEmpty ? nil : parentInfo) {
                     if let accountId = created.accountId {
                         accountIdMapping[category.id] = accountId
                         if defaultExpenseAccountId == nil {
@@ -139,6 +186,12 @@ class MigrationService {
                     }
                     result.recordSuccess()
                 } else if dryRun {
+                    // Populate placeholder ID for dependent migrations
+                    let placeholderId = "dry-run-account-\(category.id)"
+                    accountIdMapping[category.id] = placeholderId
+                    if defaultExpenseAccountId == nil {
+                        defaultExpenseAccountId = "dry-run-default-account"
+                    }
                     result.recordSuccess()
                 }
             } catch {
@@ -146,6 +199,13 @@ class MigrationService {
                 if verbose {
                     print("    Error: \(error.localizedDescription)")
                 }
+            }
+        }
+
+        // Map duplicate category IDs to the same Zoho account ID as their canonical category
+        for (duplicateId, canonicalId) in duplicateMapping {
+            if let accountId = accountIdMapping[canonicalId] {
+                accountIdMapping[duplicateId] = accountId
             }
         }
 
@@ -180,6 +240,8 @@ class MigrationService {
                     }
                     result.recordSuccess()
                 } else if dryRun {
+                    // Populate placeholder ID for dependent migrations
+                    customerIdMapping[client.id] = "dry-run-customer-\(client.id)"
                     result.recordSuccess()
                 }
             } catch {
@@ -221,6 +283,8 @@ class MigrationService {
                     }
                     result.recordSuccess()
                 } else if dryRun {
+                    // Populate placeholder ID for dependent migrations
+                    vendorIdMapping[vendor.id] = "dry-run-vendor-\(vendor.id)"
                     result.recordSuccess()
                 }
             } catch {
@@ -273,6 +337,8 @@ class MigrationService {
                     }
                     result.recordSuccess()
                 } else if dryRun {
+                    // Populate placeholder ID for dependent migrations
+                    invoiceIdMapping[invoice.id] = "dry-run-invoice-\(invoice.id)"
                     result.recordSuccess()
                 }
             } catch {
@@ -316,6 +382,8 @@ class MigrationService {
                     }
                     result.recordSuccess()
                 } else if dryRun {
+                    // Populate placeholder ID for dependent migrations
+                    taxIdMapping[tax.id] = "dry-run-tax-\(tax.id)"
                     result.recordSuccess()
                 }
             } catch {
@@ -361,6 +429,8 @@ class MigrationService {
                     }
                     result.recordSuccess()
                 } else if dryRun {
+                    // Populate placeholder ID for dependent migrations
+                    itemIdMapping[item.id] = "dry-run-item-\(item.id)"
                     result.recordSuccess()
                 }
             } catch {

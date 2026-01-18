@@ -189,9 +189,10 @@ actor ZohoAPI {
         return response.expense
     }
 
-    func createAccount(_ account: ZBAccountCreateRequest) async throws -> ZBAccount? {
+    func createAccount(_ account: ZBAccountCreateRequest, parentInfo: String? = nil) async throws -> ZBAccount? {
         if dryRun {
-            print("  [DRY RUN] Would create account: \(account.accountName)")
+            let suffix = parentInfo ?? ""
+            print("  [DRY RUN] Would create account: \(account.accountName)\(suffix)")
             return nil
         }
 
