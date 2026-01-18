@@ -10,13 +10,19 @@ struct ZBContactListResponse: Codable {
     let code: Int
     let message: String
     let contacts: [ZBContact]?
+
+    enum CodingKeys: String, CodingKey {
+        case code
+        case message
+        case contacts
+    }
 }
 
 struct ZBContact: Codable {
     var contactId: String?
-    var contactName: String
+    var contactName: String?
     var companyName: String?
-    var contactType: String
+    var contactType: String?
     var customerSubType: String?
     var billingAddress: ZBAddress?
     var shippingAddress: ZBAddress?

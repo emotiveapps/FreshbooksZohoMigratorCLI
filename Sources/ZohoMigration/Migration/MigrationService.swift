@@ -237,6 +237,28 @@ class MigrationService {
                     }
                     result.recordSuccess()
                 }
+            } catch let error as ZohoError {
+                // Check if error is "already exists" - if so, fetch and use existing account
+                if case .apiError(let code, _) = error, code == 11002 {
+                    // Account already exists - re-fetch to get its ID
+                    let refreshedAccounts = try await zohoAPI.fetchAccounts()
+                    if let existing = refreshedAccounts.first(where: { $0.accountName?.lowercased() == nameLower }) {
+                        if let accountId = existing.accountId {
+                            parentAccountIds[parentName] = accountId
+                            configAccountIdMapping[parentName] = accountId
+                            existingByName[nameLower] = accountId
+                            if defaultExpenseAccountId == nil {
+                                defaultExpenseAccountId = accountId
+                            }
+                            if verbose {
+                                print("  [EXISTS] Parent: \(parentName) (found after create attempt)")
+                            }
+                            result.recordSuccess()
+                            continue
+                        }
+                    }
+                }
+                result.recordFailure(entity: parentName, error: error.localizedDescription)
             } catch {
                 result.recordFailure(entity: parentName, error: error.localizedDescription)
             }
@@ -292,6 +314,26 @@ class MigrationService {
                     }
                     result.recordSuccess()
                 }
+            } catch let error as ZohoError {
+                // Check if error is "already exists" - if so, fetch and use existing account
+                if case .apiError(let code, _) = error, code == 11002 {
+                    let refreshedAccounts = try await zohoAPI.fetchAccounts()
+                    let nameLower = zohoName.lowercased()
+                    if let existing = refreshedAccounts.first(where: { $0.accountName?.lowercased() == nameLower }) {
+                        if let accountId = existing.accountId {
+                            configAccountIdMapping[zohoName] = accountId
+                            if defaultExpenseAccountId == nil {
+                                defaultExpenseAccountId = accountId
+                            }
+                            if verbose {
+                                print("  [EXISTS] Child: \(zohoName) (found after create attempt)")
+                            }
+                            result.recordSuccess()
+                            continue
+                        }
+                    }
+                }
+                result.recordFailure(entity: zohoName, error: error.localizedDescription)
             } catch {
                 result.recordFailure(entity: zohoName, error: error.localizedDescription)
             }
@@ -446,8 +488,8 @@ class MigrationService {
         let existingCustomers = try await zohoAPI.fetchContacts(contactType: "customer")
         var existingByName: [String: String] = [:] // name -> contactId
         for customer in existingCustomers {
-            if let contactId = customer.contactId {
-                existingByName[customer.contactName.lowercased()] = contactId
+            if let contactId = customer.contactId, let name = customer.contactName {
+                existingByName[name.lowercased()] = contactId
             }
         }
         print("Found \(existingCustomers.count) existing customers in Zoho")
@@ -516,8 +558,8 @@ class MigrationService {
         let existingVendors = try await zohoAPI.fetchContacts(contactType: "vendor")
         var existingByName: [String: String] = [:] // name -> contactId
         for vendor in existingVendors {
-            if let contactId = vendor.contactId {
-                existingByName[vendor.contactName.lowercased()] = contactId
+            if let contactId = vendor.contactId, let name = vendor.contactName {
+                existingByName[name.lowercased()] = contactId
             }
         }
         print("Found \(existingVendors.count) existing vendors in Zoho")
