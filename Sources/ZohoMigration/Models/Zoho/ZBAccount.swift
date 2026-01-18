@@ -20,7 +20,7 @@ struct ZBAccountListResponse: Codable {
     enum CodingKeys: String, CodingKey {
         case code
         case message
-        case chartOfAccounts = "chart_of_accounts"
+        case chartOfAccounts = "chartofaccounts"  // Zoho uses lowercase without underscore
     }
 }
 
