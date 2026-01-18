@@ -159,27 +159,40 @@ class MigrationService {
         let categories = try await freshBooksAPI.fetchCategories()
         print("Found \(categories.count) FreshBooks categories")
 
-        // Map each FB category to a Zoho category name
+        // IMPORTANT: Only create categories that are explicitly defined in config.json
+        // Use ALL categories from config, not derived from FreshBooks
+        let zohoCategoriesNeeded: Set<String> = Set(mapping.allCategoryNames)
+        let parentCategoriesNeeded: Set<String> = Set(mapping.parentCategories)
+
+        print("Will create \(parentCategoriesNeeded.count) parent categories and \(zohoCategoriesNeeded.count - parentCategoriesNeeded.count) child categories from config")
+
+        // Map each FB category to a Zoho category name (only if target exists in config)
         var categoryToZoho: [Int: String] = [:]
-        var zohoCategoriesNeeded: Set<String> = []
+        var unmappedCategories: [String] = []
 
         for category in categories {
             let zohoName = AccountMapper.mapToZohoCategory(category, using: mapping)
-            categoryToZoho[category.id] = zohoName
-            zohoCategoriesNeeded.insert(zohoName)
-        }
 
-        // Determine which parent categories are needed (for categories that have parents)
-        var parentCategoriesNeeded: Set<String> = []
-        for zohoName in zohoCategoriesNeeded {
-            if let parentName = mapping.parentName(for: zohoName) {
-                parentCategoriesNeeded.insert(parentName)
-            } else if mapping.isParentCategory(zohoName) {
-                parentCategoriesNeeded.insert(zohoName)
+            // Only accept mapping if target category exists in config
+            if mapping.categoryExists(zohoName) {
+                categoryToZoho[category.id] = zohoName
+            } else {
+                // Use fallback category for unmapped FreshBooks categories
+                let fallback = mapping.defaultCategory
+                categoryToZoho[category.id] = fallback
+                unmappedCategories.append("\(category.name) -> \(fallback)")
             }
         }
 
-        print("Need \(parentCategoriesNeeded.count) parent categories and \(zohoCategoriesNeeded.count) total accounts")
+        if !unmappedCategories.isEmpty {
+            print("\nNote: \(unmappedCategories.count) FreshBooks categories mapped to fallback:")
+            for msg in unmappedCategories.prefix(10) {
+                print("  - \(msg)")
+            }
+            if unmappedCategories.count > 10 {
+                print("  ... and \(unmappedCategories.count - 10) more")
+            }
+        }
 
         var result = MigrationResult()
         var parentAccountIds: [String: String] = [:] // parent name -> Zoho account ID
@@ -253,6 +266,12 @@ class MigrationService {
             }
 
             let parentAccountId = parentName.flatMap { parentAccountIds[$0] }
+
+            // Warn if parent should exist but ID wasn't found
+            if parentName != nil && parentAccountId == nil && !dryRun {
+                print("  [WARNING] Parent '\(parentName!)' not found for child '\(zohoName)' - will create as top-level")
+            }
+
             let isCogs = zohoName.lowercased().contains("cost of")
             let request = AccountMapper.createAccount(zohoName, parentAccountId: parentAccountId, isCogs: isCogs)
 
