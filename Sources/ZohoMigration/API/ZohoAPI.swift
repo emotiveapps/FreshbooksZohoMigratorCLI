@@ -297,8 +297,8 @@ actor ZohoAPI {
     func fetchTaxes() async throws -> [ZBTax] {
         let data = try await makeRequest(endpoint: "/settings/taxes")
 
+        // Don't use .convertFromSnakeCase - conflicts with explicit CodingKeys
         let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
         let response = try decoder.decode(ZBTaxListResponse.self, from: data)
 
         return response.taxes ?? []
@@ -330,8 +330,8 @@ actor ZohoAPI {
     func fetchItems() async throws -> [ZBItem] {
         let data = try await makeRequest(endpoint: "/items")
 
+        // Don't use .convertFromSnakeCase - conflicts with explicit CodingKeys
         let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
         let response = try decoder.decode(ZBItemListResponse.self, from: data)
 
         return response.items ?? []
@@ -354,8 +354,8 @@ actor ZohoAPI {
     func fetchInvoices() async throws -> [ZBInvoice] {
         let data = try await makeRequest(endpoint: "/invoices")
 
+        // Don't use .convertFromSnakeCase - conflicts with explicit CodingKeys
         let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
         let response = try decoder.decode(ZBInvoiceListResponse.self, from: data)
 
         return response.invoices ?? []
@@ -364,8 +364,8 @@ actor ZohoAPI {
     func fetchExpenses() async throws -> [ZBExpense] {
         let data = try await makeRequest(endpoint: "/expenses")
 
+        // Don't use .convertFromSnakeCase - conflicts with explicit CodingKeys
         let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
         let response = try decoder.decode(ZBExpenseListResponse.self, from: data)
 
         return response.expenses ?? []
@@ -374,8 +374,8 @@ actor ZohoAPI {
     func fetchPayments() async throws -> [ZBPayment] {
         let data = try await makeRequest(endpoint: "/customerpayments")
 
+        // Don't use .convertFromSnakeCase - conflicts with explicit CodingKeys
         let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
         let response = try decoder.decode(ZBPaymentListResponse.self, from: data)
 
         return response.customerpayments ?? []
