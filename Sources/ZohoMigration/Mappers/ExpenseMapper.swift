@@ -4,6 +4,8 @@ struct ExpenseMapperResult {
     let request: ZBExpenseCreateRequest
     let businessLine: BusinessLine?
     let categoryName: String?
+    let paidThroughMapped: Bool
+    let unmappedPaidThrough: String?  // FreshBooks account name that wasn't mapped
 }
 
 struct ExpenseMapper {
@@ -81,8 +83,19 @@ struct ExpenseMapper {
 
         // Look up paid-through account from FreshBooks accountName
         var paidThroughAccountId: String? = nil
-        if let fbAccountName = expense.accountName?.lowercased() {
-            paidThroughAccountId = paidThroughMapping[fbAccountName]
+        var paidThroughMapped = false
+        var unmappedPaidThrough: String? = nil
+
+        if let fbAccountName = expense.accountName, !fbAccountName.isEmpty {
+            if let mappedId = paidThroughMapping[fbAccountName.lowercased()] {
+                paidThroughAccountId = mappedId
+                paidThroughMapped = true
+            } else {
+                unmappedPaidThrough = fbAccountName
+            }
+        } else {
+            // Empty/nil account name is normal for manually entered or Gusto-imported expenses
+            paidThroughMapped = true
         }
 
         // Look up tax ID from FreshBooks taxName1
@@ -107,6 +120,12 @@ struct ExpenseMapper {
             tags: tags
         )
 
-        return ExpenseMapperResult(request: request, businessLine: businessLine, categoryName: categoryName)
+        return ExpenseMapperResult(
+            request: request,
+            businessLine: businessLine,
+            categoryName: categoryName,
+            paidThroughMapped: paidThroughMapped,
+            unmappedPaidThrough: unmappedPaidThrough
+        )
     }
 }

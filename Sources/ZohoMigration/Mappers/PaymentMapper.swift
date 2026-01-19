@@ -1,12 +1,18 @@
 import Foundation
 
+struct PaymentMapperResult {
+    let request: ZBPaymentCreateRequest
+    let depositAccountMapped: Bool
+    let unmappedKey: String?  // gateway or type that wasn't mapped
+}
+
 struct PaymentMapper {
     static func map(
         _ payment: FBPayment,
         customerIdMapping: [Int: String],
         invoiceIdMapping: [Int: String] = [:],
         depositAccountMapping: [String: String] = [:]  // gateway/type (lowercased) -> Zoho accountId
-    ) -> ZBPaymentCreateRequest? {
+    ) -> PaymentMapperResult? {
         guard let clientId = payment.clientId,
               let customerId = customerIdMapping[clientId] else {
             return nil
@@ -35,17 +41,31 @@ struct PaymentMapper {
 
         // Determine deposit account based on gateway or type
         var accountId: String? = nil
+        var depositAccountMapped = false
+        var unmappedKey: String? = nil
+
         if let gateway = payment.gateway?.lowercased() {
-            accountId = depositAccountMapping[gateway]
+            if let mapped = depositAccountMapping[gateway] {
+                accountId = mapped
+                depositAccountMapped = true
+            } else {
+                unmappedKey = payment.gateway
+            }
         }
         if accountId == nil, let type = payment.type?.lowercased() {
-            accountId = depositAccountMapping[type]
+            if let mapped = depositAccountMapping[type] {
+                accountId = mapped
+                depositAccountMapped = true
+            } else if unmappedKey == nil {
+                unmappedKey = payment.type
+            }
         }
         if accountId == nil {
             accountId = depositAccountMapping["default"]
+            // Still not mapped if we fell through to default
         }
 
-        return ZBPaymentCreateRequest(
+        let request = ZBPaymentCreateRequest(
             customerId: customerId,
             invoices: invoices,
             paymentMode: paymentMode,
@@ -54,6 +74,12 @@ struct PaymentMapper {
             referenceNumber: payment.transactionId ?? payment.orderId,
             description: payment.note,
             accountId: accountId
+        )
+
+        return PaymentMapperResult(
+            request: request,
+            depositAccountMapped: depositAccountMapped,
+            unmappedKey: unmappedKey
         )
     }
 

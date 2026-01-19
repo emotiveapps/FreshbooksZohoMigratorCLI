@@ -968,7 +968,7 @@ class MigrationService {
                 continue
             }
 
-            guard let request = PaymentMapper.map(
+            guard let mapperResult = PaymentMapper.map(
                 payment,
                 customerIdMapping: customerIdMapping,
                 invoiceIdMapping: invoiceIdMapping,
@@ -980,6 +980,14 @@ class MigrationService {
                 }
                 result.recordSkip()
                 continue
+            }
+
+            let request = mapperResult.request
+
+            // Warn if deposit account mapping failed
+            if !mapperResult.depositAccountMapped {
+                let key = mapperResult.unmappedKey ?? "unknown"
+                print("  ⚠️  Payment \(payment.id) on \(request.date): no deposit account mapping for '\(key)' (using default)")
             }
 
             if verbose {
@@ -1105,6 +1113,11 @@ class MigrationService {
             if let businessLine = mapperResult.businessLine {
                 tagCounts[businessLine, default: 0] += 1
                 businessTag = businessLine.shortCode
+            }
+
+            // Warn if paid-through account mapping failed
+            if !mapperResult.paidThroughMapped, let unmapped = mapperResult.unmappedPaidThrough {
+                print("  ⚠️  Expense \(expense.id) on \(request.date): no paid-through mapping for '\(unmapped)'")
             }
 
             do {
