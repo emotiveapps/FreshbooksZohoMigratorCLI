@@ -132,8 +132,8 @@ actor ZohoAPI {
 
         let data = try await makeRequest(endpoint: "/contacts", method: "POST", body: body)
 
+        // Don't use .convertFromSnakeCase - conflicts with explicit CodingKeys
         let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
         let response = try decoder.decode(ZBContactResponse.self, from: data)
 
         if response.code != 0 {
@@ -156,7 +156,7 @@ actor ZohoAPI {
         let data = try await makeRequest(endpoint: "/invoices", method: "POST", body: body)
 
         let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        // Don't use .convertFromSnakeCase - conflicts with explicit CodingKeys
         let response = try decoder.decode(ZBInvoiceResponse.self, from: data)
 
         if response.code != 0 {
@@ -193,7 +193,7 @@ actor ZohoAPI {
         let data = try await makeRequest(endpoint: "/expenses", method: "POST", body: body)
 
         let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        // Don't use .convertFromSnakeCase - conflicts with explicit CodingKeys
         let response = try decoder.decode(ZBExpenseResponse.self, from: data)
 
         if response.code != 0 {
@@ -217,7 +217,7 @@ actor ZohoAPI {
         let data = try await makeRequest(endpoint: "/chartofaccounts", method: "POST", body: body)
 
         let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        // Don't use .convertFromSnakeCase - conflicts with explicit CodingKeys
         let response = try decoder.decode(ZBAccountResponse.self, from: data)
 
         if response.code != 0 {
@@ -272,7 +272,7 @@ actor ZohoAPI {
         let data = try await makeRequest(endpoint: "/items", method: "POST", body: body)
 
         let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        // Don't use .convertFromSnakeCase - conflicts with explicit CodingKeys
         let response = try decoder.decode(ZBItemResponse.self, from: data)
 
         if response.code != 0 {
@@ -295,7 +295,7 @@ actor ZohoAPI {
         let data = try await makeRequest(endpoint: "/settings/taxes", method: "POST", body: body)
 
         let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        // Don't use .convertFromSnakeCase - conflicts with explicit CodingKeys
         let response = try decoder.decode(ZBTaxResponse.self, from: data)
 
         if response.code != 0 {
@@ -328,7 +328,7 @@ actor ZohoAPI {
         let data = try await makeRequest(endpoint: "/customerpayments", method: "POST", body: body)
 
         let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        // Don't use .convertFromSnakeCase - conflicts with explicit CodingKeys
         let response = try decoder.decode(ZBPaymentResponse.self, from: data)
 
         if response.code != 0 {
@@ -349,17 +349,34 @@ actor ZohoAPI {
     }
 
     func fetchContacts(contactType: String? = nil) async throws -> [ZBContact] {
-        var endpoint = "/contacts"
-        if let type = contactType {
-            endpoint += "?contact_type=\(type)"
+        var allContacts: [ZBContact] = []
+        var page = 1
+        let perPage = 200  // Zoho's max per page
+
+        while true {
+            var endpoint = "/contacts?page=\(page)&per_page=\(perPage)"
+            if let type = contactType {
+                endpoint += "&contact_type=\(type)"
+            }
+            let data = try await makeRequest(endpoint: endpoint)
+
+            // Don't use .convertFromSnakeCase - conflicts with explicit CodingKeys
+            let decoder = JSONDecoder()
+            let response = try decoder.decode(ZBContactListResponse.self, from: data)
+
+            if let contacts = response.contacts {
+                allContacts.append(contentsOf: contacts)
+            }
+
+            // Check if there are more pages
+            if let pageContext = response.pageContext, pageContext.hasMorePage == true {
+                page += 1
+            } else {
+                break
+            }
         }
-        let data = try await makeRequest(endpoint: endpoint)
 
-        // Don't use .convertFromSnakeCase - conflicts with explicit CodingKeys
-        let decoder = JSONDecoder()
-        let response = try decoder.decode(ZBContactListResponse.self, from: data)
-
-        return response.contacts ?? []
+        return allContacts
     }
 
     func fetchInvoices() async throws -> [ZBInvoice] {

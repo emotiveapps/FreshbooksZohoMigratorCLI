@@ -10,11 +10,27 @@ struct ZBContactListResponse: Codable {
     let code: Int
     let message: String
     let contacts: [ZBContact]?
+    let pageContext: ZBPageContext?
 
     enum CodingKeys: String, CodingKey {
         case code
         case message
         case contacts
+        case pageContext = "page_context"
+    }
+}
+
+struct ZBPageContext: Codable {
+    let page: Int?
+    let perPage: Int?
+    let hasMorePage: Bool?
+    let total: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case page
+        case perPage = "per_page"
+        case hasMorePage = "has_more_page"
+        case total
     }
 }
 
