@@ -47,3 +47,30 @@ struct ZBTaxCreateRequest: Codable {
         case taxType = "tax_type"
     }
 }
+
+// Tax Exemptions
+struct ZBTaxExemptionListResponse: Codable {
+    let code: Int
+    let message: String
+    let taxExemptions: [ZBTaxExemption]?
+
+    enum CodingKeys: String, CodingKey {
+        case code
+        case message
+        case taxExemptions = "tax_exemptions"
+    }
+}
+
+struct ZBTaxExemption: Codable {
+    var taxExemptionId: String?
+    var taxExemptionCode: String?
+    var description: String?
+    var type: String?
+
+    enum CodingKeys: String, CodingKey {
+        case taxExemptionId = "tax_exemption_id"
+        case taxExemptionCode = "tax_exemption_code"
+        case description
+        case type
+    }
+}

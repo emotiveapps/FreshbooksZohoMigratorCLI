@@ -318,6 +318,16 @@ actor ZohoAPI {
         return response.taxes ?? []
     }
 
+    func fetchTaxExemptions() async throws -> [ZBTaxExemption] {
+        let data = try await makeRequest(endpoint: "/settings/taxexemptions")
+
+        // Don't use .convertFromSnakeCase - conflicts with explicit CodingKeys
+        let decoder = JSONDecoder()
+        let response = try decoder.decode(ZBTaxExemptionListResponse.self, from: data)
+
+        return response.taxExemptions ?? []
+    }
+
     func createPayment(_ payment: ZBPaymentCreateRequest) async throws -> ZBPayment? {
         if dryRun {
             print("  [DRY RUN] Would create payment: \(payment.amount) on \(payment.date)")

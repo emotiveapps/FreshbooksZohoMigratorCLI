@@ -20,7 +20,12 @@ struct InvoiceMapper {
         return false
     }
 
-    static func map(_ invoice: FBInvoice, customerIdMapping: [Int: String]) -> ZBInvoiceCreateRequest? {
+    static func map(
+        _ invoice: FBInvoice,
+        customerIdMapping: [Int: String],
+        taxMapping: [String: String] = [:],  // FreshBooks taxName (lowercased) -> Zoho taxId
+        servicesExemptionId: String? = nil  // Tax exemption ID for non-taxable line items
+    ) -> ZBInvoiceCreateRequest? {
         guard let customerId = invoice.customerId,
               let zohoCustomerId = customerIdMapping[customerId] else {
             return nil
@@ -43,11 +48,24 @@ struct InvoiceMapper {
                     quantity = 1
                 }
 
+                // Only apply tax if the FreshBooks line actually has a non-zero tax amount
+                var taxId: String? = nil
+                var isTaxable: Bool = false
+                if let fbTaxName = line.taxName1, !fbTaxName.isEmpty,
+                   let taxAmountStr = line.taxAmount1,
+                   let taxAmount = Double(taxAmountStr), taxAmount > 0 {
+                    taxId = taxMapping[fbTaxName.lowercased()]
+                    isTaxable = true
+                }
+
                 lineItems.append(ZBInvoiceLineItemRequest(
                     name: line.name ?? "Item",
                     description: line.description,
                     rate: rate,
-                    quantity: quantity
+                    quantity: quantity,
+                    taxId: taxId,
+                    isTaxable: isTaxable,
+                    taxExemptionId: isTaxable ? nil : servicesExemptionId
                 ))
             }
         }
@@ -58,7 +76,10 @@ struct InvoiceMapper {
                     name: "Invoice Total",
                     description: invoice.description,
                     rate: value,
-                    quantity: 1
+                    quantity: 1,
+                    taxId: nil,
+                    isTaxable: false,
+                    taxExemptionId: servicesExemptionId
                 ))
             }
         }
@@ -73,7 +94,7 @@ struct InvoiceMapper {
             lineItems: lineItems,
             notes: invoice.notes,
             terms: invoice.terms,
-            paymentTerms: nil,
+            paymentTerms: 15,
             isInclusiveTax: false
         )
     }

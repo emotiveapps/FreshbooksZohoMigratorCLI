@@ -695,6 +695,50 @@ class MigrationService {
         let invoices = try await freshBooksAPI.fetchInvoices()
         print("Found \(invoices.count) invoices")
 
+        // Build tax mapping for invoices (only apply tax to lines that had tax in FreshBooks)
+        let zohoTaxes = try await zohoAPI.fetchTaxes()
+        var taxMapping: [String: String] = [:]  // FB taxName (lowercased) -> Zoho taxId
+        for tax in zohoTaxes {
+            if let taxId = tax.taxId {
+                taxMapping[tax.taxName.lowercased()] = taxId
+            }
+        }
+        if verbose {
+            print("  Built tax mapping with \(taxMapping.count) taxes for invoices")
+        }
+
+        // Fetch tax exemptions for non-taxable line items
+        let taxExemptions = try await zohoAPI.fetchTaxExemptions()
+        if verbose && !taxExemptions.isEmpty {
+            print("  Available tax exemptions:")
+            for exemption in taxExemptions {
+                print("    - \(exemption.taxExemptionCode ?? "no code"): \(exemption.description ?? "no description") (ID: \(exemption.taxExemptionId ?? "?"))")
+            }
+        }
+        var servicesExemptionId: String? = nil
+        // Look for "Services are exempt" or similar exemption
+        for exemption in taxExemptions {
+            let desc = (exemption.description ?? "").lowercased()
+            let code = (exemption.taxExemptionCode ?? "").lowercased()
+            if desc.contains("service") || code.contains("service") {
+                servicesExemptionId = exemption.taxExemptionId
+                break
+            }
+        }
+        // If no services-specific exemption, use any non-taxable exemption
+        if servicesExemptionId == nil {
+            servicesExemptionId = taxExemptions.first?.taxExemptionId
+        }
+        if verbose {
+            if let exemptionId = servicesExemptionId {
+                print("  Using tax exemption ID: \(exemptionId) for non-taxable line items")
+            } else {
+                print("  Warning: No tax exemption found in Zoho Books.")
+                print("           Create a tax exemption in Zoho Books: Settings → Taxes → Tax Exemptions")
+                print("           Suggested: Code='SERVICES', Description='Services are exempt'")
+            }
+        }
+
         var result = MigrationResult()
         var customersCreatedFromInvoices = 0
         var existingCount = 0
@@ -749,7 +793,7 @@ class MigrationService {
                 }
             }
 
-            guard let request = InvoiceMapper.map(invoice, customerIdMapping: customerIdMapping) else {
+            guard let request = InvoiceMapper.map(invoice, customerIdMapping: customerIdMapping, taxMapping: taxMapping, servicesExemptionId: servicesExemptionId) else {
                 if verbose {
                     print("  Skipping invoice \(invoiceNumber): no customer mapping")
                 }

@@ -115,11 +115,17 @@ struct ZBInvoiceLineItemRequest: Codable {
     var description: String?
     var rate: Double?
     var quantity: Double?
+    var taxId: String?
+    var isTaxable: Bool?
+    var taxExemptionId: String?
 
     enum CodingKeys: String, CodingKey {
         case name
         case description
         case rate
         case quantity
+        case taxId = "tax_id"
+        case isTaxable = "is_taxable"
+        case taxExemptionId = "tax_exemption_id"
     }
 }
