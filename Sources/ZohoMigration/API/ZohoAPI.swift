@@ -74,7 +74,10 @@ actor ZohoAPI {
         await checkRateLimit()
 
         var components = URLComponents(string: "\(baseURL)\(endpoint)")!
-        components.queryItems = [URLQueryItem(name: "organization_id", value: organizationId)]
+        // Append organization_id to existing query items (don't replace them)
+        var queryItems = components.queryItems ?? []
+        queryItems.append(URLQueryItem(name: "organization_id", value: organizationId))
+        components.queryItems = queryItems
 
         guard let url = components.url else {
             throw ZohoError.invalidURL
