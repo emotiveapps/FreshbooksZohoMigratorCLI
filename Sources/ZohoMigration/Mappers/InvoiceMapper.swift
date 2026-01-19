@@ -93,8 +93,9 @@ struct InvoiceMapper {
             currencyCode: invoice.currencyCode,
             lineItems: lineItems,
             notes: invoice.notes,
-            terms: invoice.terms,
+            terms: nil,
             paymentTerms: 15,
+            paymentTermsLabel: "Net 15",
             isInclusiveTax: false
         )
     }

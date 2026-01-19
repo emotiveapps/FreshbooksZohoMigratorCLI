@@ -93,6 +93,7 @@ struct ZBInvoiceCreateRequest: Codable {
     var notes: String?
     var terms: String?
     var paymentTerms: Int?
+    var paymentTermsLabel: String?
     var isInclusiveTax: Bool?
 
     enum CodingKeys: String, CodingKey {
@@ -106,6 +107,7 @@ struct ZBInvoiceCreateRequest: Codable {
         case notes
         case terms
         case paymentTerms = "payment_terms"
+        case paymentTermsLabel = "payment_terms_label"
         case isInclusiveTax = "is_inclusive_tax"
     }
 }
