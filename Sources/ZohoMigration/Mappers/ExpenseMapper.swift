@@ -6,6 +6,7 @@ struct ExpenseMapperResult {
     let categoryName: String?
     let paidThroughMapped: Bool
     let unmappedPaidThrough: String?  // FreshBooks account name that wasn't mapped
+    let vendorName: String?  // FreshBooks vendor name (for on-the-fly vendor creation)
 }
 
 struct ExpenseMapper {
@@ -49,8 +50,13 @@ struct ExpenseMapper {
         }()
 
         var zohoVendorId: String?
+        var vendorName: String?
         if let vendorId = expense.vendorId {
             zohoVendorId = vendorIdMapping[vendorId]
+        }
+        // Capture vendor name for on-the-fly creation if no mapping exists
+        if zohoVendorId == nil, let fbVendor = expense.vendor, !fbVendor.isEmpty {
+            vendorName = fbVendor
         }
 
         var zohoCustomerId: String?
@@ -125,7 +131,8 @@ struct ExpenseMapper {
             businessLine: businessLine,
             categoryName: categoryName,
             paidThroughMapped: paidThroughMapped,
-            unmappedPaidThrough: unmappedPaidThrough
+            unmappedPaidThrough: unmappedPaidThrough,
+            vendorName: vendorName
         )
     }
 }

@@ -62,6 +62,7 @@ struct FBExpense: Codable, Identifiable {
     let taxPercent2: String?
     let transactionId: Int?
     let updated: String?
+    let vendor: String?
     let vendorId: Int?
     let visState: Int?
 
@@ -103,6 +104,7 @@ struct FBExpense: Codable, Identifiable {
         case taxPercent2 = "taxPercent2"
         case transactionId = "transactionid"
         case updated
+        case vendor
         case vendorId = "vendorid"
         case visState = "vis_state"
     }

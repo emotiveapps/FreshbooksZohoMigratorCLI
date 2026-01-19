@@ -1082,7 +1082,31 @@ class MigrationService {
             print("  Built tax mapping with \(taxMapping.count) taxes")
         }
 
+        // Build vendor name cache from existing Zoho vendors (for on-the-fly vendor creation)
+        print("Fetching existing vendors from Zoho...")
+        let existingVendors = try await zohoAPI.fetchContacts(contactType: "vendor")
+        var vendorNameCache: [String: String] = [:] // vendor name (lowercased) -> Zoho vendor ID
+        for vendor in existingVendors {
+            if let contactId = vendor.contactId, let name = vendor.contactName {
+                vendorNameCache[name.lowercased()] = contactId
+            }
+        }
+        print("Found \(existingVendors.count) existing vendors in Zoho")
+
+        var vendorsCreated = 0
+        let totalExpenses = expenses.count
+        var processedCount = 0
+
         for expense in expenses {
+            processedCount += 1
+
+            // Show progress every 50 expenses or at key milestones
+            if processedCount % 50 == 0 || processedCount == totalExpenses {
+                let percent = Int((Double(processedCount) / Double(totalExpenses)) * 100)
+                print("  Processing expense \(processedCount) of \(totalExpenses) (\(percent)% complete)", terminator: "\r")
+                fflush(stdout)
+            }
+
             if expense.visState != 0 && expense.visState != nil {
                 result.recordSkip()
                 continue
@@ -1107,12 +1131,53 @@ class MigrationService {
                 continue
             }
 
-            let request = mapperResult.request
+            var request = mapperResult.request
             let categoryName = mapperResult.categoryName ?? "Unknown"
             var businessTag: String? = nil
             if let businessLine = mapperResult.businessLine {
                 tagCounts[businessLine, default: 0] += 1
                 businessTag = businessLine.shortCode
+            }
+
+            // Create vendor on-the-fly if needed
+            if request.vendorId == nil, let vendorName = mapperResult.vendorName, !vendorName.isEmpty {
+                let vendorNameLower = vendorName.lowercased()
+
+                // Check if vendor already exists in cache
+                if let existingVendorId = vendorNameCache[vendorNameLower] {
+                    request.vendorId = existingVendorId
+                } else {
+                    // Create new vendor
+                    let vendorRequest = ZBContactCreateRequest(
+                        contactName: vendorName,
+                        companyName: nil,
+                        contactType: "vendor",
+                        billingAddress: nil,
+                        shippingAddress: nil,
+                        contactPersons: nil
+                    )
+
+                    do {
+                        if let created = try await zohoAPI.createContact(vendorRequest) {
+                            if let contactId = created.contactId {
+                                vendorNameCache[vendorNameLower] = contactId
+                                request.vendorId = contactId
+                                vendorsCreated += 1
+                                if verbose {
+                                    print("\n  [CREATED VENDOR] \(vendorName)")
+                                }
+                            }
+                        } else if dryRun {
+                            // In dry run, still record the vendor would be created
+                            let placeholderId = "dry-run-vendor-\(vendorName.replacingOccurrences(of: " ", with: "-"))"
+                            vendorNameCache[vendorNameLower] = placeholderId
+                            request.vendorId = placeholderId
+                            vendorsCreated += 1
+                        }
+                    } catch {
+                        print("\n  ⚠️  Could not create vendor '\(vendorName)': \(error.localizedDescription)")
+                    }
+                }
             }
 
             // Warn if paid-through account mapping failed
@@ -1149,6 +1214,9 @@ class MigrationService {
             }
         }
 
+        // Clear progress line
+        print("")
+
         // Print tag summary if business tagging is configured
         if !tagCounts.isEmpty {
             print("\nExpense Tags Summary:")
@@ -1160,6 +1228,11 @@ class MigrationService {
         // Print attachment summary if attachments were processed
         if attachmentCount > 0 {
             print("\nAttachments: \(attachmentCount) receipts \(dryRun ? "would be" : "") migrated")
+        }
+
+        // Print vendor summary if vendors were created
+        if vendorsCreated > 0 {
+            print("\nVendors: \(vendorsCreated) vendors \(dryRun ? "would be" : "were") created on-the-fly")
         }
 
         result.printSummary(entityType: "Expenses")
