@@ -104,7 +104,10 @@ I'll post an update with the results later this long weekend.
 
 ---
 **LLM Authorship Begins Here**
-ℹ️ Everything above this point was written by the author, by hand. Most of the rest was written by the LLM, with my guidance. 
+
+⚠️ Everything above this point was written by the author, by hand.
+Most of the text below was written by the LLM, with human guidance.
+ 
 --- 
 
 > ⚠️ **DISCLAIMER**: This software is provided "as is", without warranty of any kind, express or implied. Use at your own risk. The author(s) are not responsible for any data loss, corruption, or damage that may result from using this tool. **Always back up your data before running any migration.** Test thoroughly with `--dry-run` first and verify results in a sandbox environment when possible.
