@@ -403,13 +403,32 @@ actor ZohoAPI {
     }
 
     func fetchExpenses() async throws -> [ZBExpense] {
-        let data = try await makeRequest(endpoint: "/expenses")
+        var allExpenses: [ZBExpense] = []
+        var page = 1
+        let perPage = 200
 
-        // Don't use .convertFromSnakeCase - conflicts with explicit CodingKeys
-        let decoder = JSONDecoder()
-        let response = try decoder.decode(ZBExpenseListResponse.self, from: data)
+        while true {
+            let endpoint = "/expenses?page=\(page)&per_page=\(perPage)"
+            let data = try await makeRequest(endpoint: endpoint)
 
-        return response.expenses ?? []
+            // Don't use .convertFromSnakeCase - conflicts with explicit CodingKeys
+            let decoder = JSONDecoder()
+            let response = try decoder.decode(ZBExpenseListResponse.self, from: data)
+
+            if let expenses = response.expenses {
+                allExpenses.append(contentsOf: expenses)
+            }
+
+            // Check if there are more pages
+            if let pageContext = response.pageContext,
+               pageContext.hasMorePage == true {
+                page += 1
+            } else {
+                break
+            }
+        }
+
+        return allExpenses
     }
 
     func fetchPayments() async throws -> [ZBPayment] {

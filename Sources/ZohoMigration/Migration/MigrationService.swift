@@ -1319,7 +1319,7 @@ class MigrationService {
     /// Download attachment from FreshBooks and upload to Zoho expense
     private func migrateExpenseAttachment(fbExpenseId: Int, zohoExpenseId: String, expenseDesc: String) async {
         do {
-            // First fetch expense details to get attachment ID
+            // First fetch expense details to get attachment ID (with include[]=attachment)
             guard let details = try await freshBooksAPI.fetchExpenseDetails(expenseId: fbExpenseId) else {
                 if verbose {
                     print("    [WARNING] Could not fetch expense details for \(fbExpenseId)")
@@ -1327,12 +1327,19 @@ class MigrationService {
                 return
             }
 
-            // Get attachment ID from details
+            // Get attachment ID, JWT, and media type from details
             let attachmentId: Int?
-            if let attId = details.attachmentId {
+            let jwt: String?
+            let mediaType: String?
+
+            if let att = details.attachment {
+                attachmentId = att.effectiveId
+                jwt = att.jwt
+                mediaType = att.mediaType
+            } else if let attId = details.attachmentId {
                 attachmentId = attId
-            } else if let attId = details.attachment?.id {
-                attachmentId = attId
+                jwt = nil
+                mediaType = nil
             } else {
                 if verbose {
                     print("    [WARNING] No attachment ID found for expense \(fbExpenseId)")
@@ -1342,8 +1349,8 @@ class MigrationService {
 
             guard let attId = attachmentId else { return }
 
-            // Download from FreshBooks
-            guard let attachment = try await freshBooksAPI.downloadAttachment(attachmentId: attId) else {
+            // Download from FreshBooks using JWT (secure temporary link)
+            guard let attachment = try await freshBooksAPI.downloadAttachment(attachmentId: attId, jwt: jwt, mediaType: mediaType) else {
                 if verbose {
                     print("    [WARNING] Could not download attachment \(attId) for expense: \(expenseDesc)")
                 }
@@ -1455,5 +1462,79 @@ class MigrationService {
             print("  (\(notFoundCount) FreshBooks invoices not found in Zoho)")
         }
         result.printSummary(entityType: "Invoice Status Updates")
+    }
+
+    /// Migrate attachments/receipts for existing expenses.
+    /// Matches FB expenses to Zoho expenses by date + amount + description.
+    func migrateExpenseAttachments() async throws {
+        print("Migrating expense attachments...")
+
+        // Fetch all FreshBooks expenses
+        print("Fetching expenses from FreshBooks...")
+        let fbExpenses = try await freshBooksAPI.fetchExpenses()
+        let expensesWithReceipts = fbExpenses.filter { $0.hasReceipt == true && ($0.visState == 0 || $0.visState == nil) }
+        print("Found \(expensesWithReceipts.count) expenses with receipts in FreshBooks")
+
+        if expensesWithReceipts.isEmpty {
+            print("No expenses with receipts to migrate.")
+            return
+        }
+
+        // Fetch all Zoho expenses
+        print("Fetching expenses from Zoho...")
+        let zohoExpenses = try await zohoAPI.fetchExpenses()
+        print("Found \(zohoExpenses.count) expenses in Zoho")
+
+        // Build lookup for Zoho expenses by date + amount + description
+        // Key format: "date|amount|description"
+        var zohoByKey: [String: ZBExpense] = [:]
+        for expense in zohoExpenses {
+            guard let date = expense.date,
+                  let amount = expense.total else { continue }
+            let desc = expense.description?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let key = "\(date)|\(String(format: "%.2f", amount))|\(desc)"
+            zohoByKey[key] = expense
+        }
+
+        var result = MigrationResult()
+        var matchedCount = 0
+        var noMatchCount = 0
+
+        for fbExpense in expensesWithReceipts {
+            let fbDate = fbExpense.date ?? ""
+            let fbAmount = Double(fbExpense.amount?.amount ?? "0") ?? 0
+            let fbDesc = (fbExpense.notes ?? "").lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            let key = "\(fbDate)|\(String(format: "%.2f", fbAmount))|\(fbDesc)"
+
+            // Find matching Zoho expense
+            guard let zohoExpense = zohoByKey[key],
+                  let zohoExpenseId = zohoExpense.expenseId else {
+                noMatchCount += 1
+                if verbose {
+                    print("  [NO MATCH] FB expense \(fbExpense.id) on \(fbDate) for $\(String(format: "%.2f", fbAmount))")
+                }
+                result.recordSkip()
+                continue
+            }
+
+            matchedCount += 1
+
+            if dryRun {
+                print("  [DRY RUN] Would migrate attachment for expense \(fbExpense.id) -> Zoho \(zohoExpenseId)")
+                result.recordSuccess()
+                continue
+            }
+
+            // Migrate the attachment
+            await migrateExpenseAttachment(
+                fbExpenseId: fbExpense.id,
+                zohoExpenseId: zohoExpenseId,
+                expenseDesc: fbExpense.notes ?? String(fbExpense.id)
+            )
+            result.recordSuccess()
+        }
+
+        print("\nMatched \(matchedCount) expenses, \(noMatchCount) could not be matched")
+        result.printSummary(entityType: "Expense Attachments")
     }
 }

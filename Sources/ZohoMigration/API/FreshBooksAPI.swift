@@ -340,7 +340,8 @@ actor FreshBooksAPI {
 
     /// Fetch detailed expense info to get attachment ID
     func fetchExpenseDetails(expenseId: Int) async throws -> FBExpenseDetail? {
-        let endpoint = "/accounting/account/\(accountId)/expenses/expenses/\(expenseId)"
+        // Must include attachment to get attachment info
+        let endpoint = "/accounting/account/\(accountId)/expenses/expenses/\(expenseId)?include[]=attachment"
         let data = try await makeRequest(endpoint: endpoint)
 
         struct Response: Codable {
@@ -359,7 +360,86 @@ actor FreshBooksAPI {
 
     /// Download an expense attachment/receipt from FreshBooks
     /// Returns the file data and suggested filename, or nil if download fails
-    func downloadAttachment(attachmentId: Int) async throws -> (data: Data, filename: String)? {
+    /// The JWT is the secure temporary link returned by FreshBooks API
+    func downloadAttachment(attachmentId: Int, jwt: String? = nil, mediaType: String? = nil) async throws -> (data: Data, filename: String)? {
+        let token = await oauthHelper.freshBooksAccessToken
+
+        // Build list of URLs to try - JWT-based URLs first (the secure link)
+        var urlsToTry: [String] = []
+
+        // If we have JWT, try using it as the secure download path
+        if let jwt = jwt {
+            urlsToTry.append("\(baseURL)/uploads/images/\(jwt)")
+            urlsToTry.append("https://my.freshbooks.com/service/uploads/images/\(jwt)")
+        }
+
+        // Fallback to ID-based URLs
+        urlsToTry.append("\(baseURL)/uploads/images/\(attachmentId)")
+        urlsToTry.append("\(baseURL)/uploads/account/\(accountId)/attachments/\(attachmentId)")
+        urlsToTry.append("\(baseURL)/uploads/account/\(accountId)/images/\(attachmentId)")
+
+        for urlString in urlsToTry {
+            guard let url = URL(string: urlString) else { continue }
+
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+            if verbose {
+                print("  GET \(url.absoluteString.prefix(100))...")
+            }
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+
+            guard let httpResponse = response as? HTTPURLResponse else { continue }
+
+            if httpResponse.statusCode == 401 {
+                try await oauthHelper.refreshFreshBooksToken()
+                return try await downloadAttachment(attachmentId: attachmentId, jwt: jwt, mediaType: mediaType)
+            }
+
+            if (200...299).contains(httpResponse.statusCode) && data.count > 100 {
+                // Success - got data
+                var filename = "receipt_\(attachmentId)"
+                // Try to get filename from Content-Disposition header
+                if let contentDisposition = httpResponse.value(forHTTPHeaderField: "Content-Disposition"),
+                   let filenameRange = contentDisposition.range(of: "filename=") {
+                    let start = filenameRange.upperBound
+                    var extractedName = String(contentDisposition[start...])
+                    extractedName = extractedName.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+                    if let semicolonIndex = extractedName.firstIndex(of: ";") {
+                        extractedName = String(extractedName[..<semicolonIndex])
+                    }
+                    if !extractedName.isEmpty {
+                        filename = extractedName
+                    }
+                }
+                // Add extension based on content type or provided media type
+                if !filename.contains(".") {
+                    let contentType = httpResponse.value(forHTTPHeaderField: "Content-Type") ?? mediaType ?? ""
+                    let ext: String
+                    switch contentType.lowercased() {
+                    case let ct where ct.contains("jpeg") || ct.contains("jpg"): ext = ".jpg"
+                    case let ct where ct.contains("png"): ext = ".png"
+                    case let ct where ct.contains("gif"): ext = ".gif"
+                    case let ct where ct.contains("pdf"): ext = ".pdf"
+                    default: ext = ".jpg"
+                    }
+                    filename += ext
+                }
+                return (data: data, filename: filename)
+            }
+        }
+
+        // All attempts failed
+        if verbose {
+            print("  Failed to download attachment \(attachmentId): all URL formats returned errors")
+        }
+        return nil
+    }
+
+    /// Legacy download method - kept for compatibility
+    func downloadAttachmentLegacy(attachmentId: Int) async throws -> (data: Data, filename: String)? {
         // FreshBooks attachment endpoint
         let endpoint = "/uploads/images/\(attachmentId)"
 
@@ -385,7 +465,7 @@ actor FreshBooksAPI {
 
         if httpResponse.statusCode == 401 {
             try await oauthHelper.refreshFreshBooksToken()
-            return try await downloadAttachment(attachmentId: attachmentId)
+            return try await downloadAttachmentLegacy(attachmentId: attachmentId)
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {

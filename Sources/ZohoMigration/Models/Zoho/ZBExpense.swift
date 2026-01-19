@@ -10,6 +10,14 @@ struct ZBExpenseListResponse: Codable {
     let code: Int
     let message: String
     let expenses: [ZBExpense]?
+    let pageContext: ZBPageContext?
+
+    enum CodingKeys: String, CodingKey {
+        case code
+        case message
+        case expenses
+        case pageContext = "page_context"
+    }
 }
 
 struct ZBExpense: Codable {

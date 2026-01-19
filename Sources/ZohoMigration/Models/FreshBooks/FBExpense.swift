@@ -127,6 +127,7 @@ struct FBExpenseDetail: Codable {
 
 struct FBAttachment: Codable {
     let id: Int?
+    let attachmentId: Int?  // API returns both id and attachmentid
     let jwt: String?
     let mediaType: String?
     let fileName: String?
@@ -134,9 +135,15 @@ struct FBAttachment: Codable {
 
     enum CodingKeys: String, CodingKey {
         case id
+        case attachmentId = "attachmentid"
         case jwt
         case mediaType = "media_type"
         case fileName = "file_name"
         case uuid
+    }
+
+    /// Get the attachment ID (prefers attachmentId, falls back to id)
+    var effectiveId: Int? {
+        return attachmentId ?? id
     }
 }
