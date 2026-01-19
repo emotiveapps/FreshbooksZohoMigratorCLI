@@ -180,6 +180,23 @@ swift run ZohoMigration migrate all --config /path/to/config.json
 swift run ZohoMigration migrate all --dry-run --verbose --use-config-mapping
 ```
 
+### Refresh OAuth Tokens
+
+Use the `auth` command to get new OAuth tokens when they expire:
+
+```bash
+# Refresh FreshBooks tokens
+swift run ZohoMigration auth freshbooks
+
+# Refresh Zoho tokens
+swift run ZohoMigration auth zoho
+
+# Use custom redirect URI if needed
+swift run ZohoMigration auth freshbooks --redirect-uri "https://your-uri.com/callback"
+```
+
+The command will guide you through the OAuth flow and automatically update your `config.json` with the new tokens.
+
 ### Help
 
 ```bash
@@ -227,3 +244,5 @@ The tool automatically refreshes OAuth tokens when they expire (401 response).
 - Run categories migration before expenses if migrating separately
 - Run customers migration before invoices if migrating separately
 - Run customers and invoices before payments if migrating separately
+- **On-the-fly vendor creation**: During expense migration, if an expense references a vendor by name that doesn't exist in Zoho, it will be created automatically. Existing vendors are cached at the start to avoid duplicates.
+- Invoice terms (payment terms like "Net 30") are mapped from FreshBooks to Zoho

@@ -150,7 +150,7 @@ func createWidget(_ widget: ZBWidgetCreateRequest) async throws -> ZBWidget? {
 ### 7. Add CLI Command to main.swift
 
 1. Add `Widgets.self` to subcommands array in `Migrate` struct
-2. Add new command struct:
+2. Add new command struct (see existing commands like `Customers`, `Invoices`, `Payments`):
 
 ```swift
 struct Widgets: AsyncParsableCommand {
@@ -171,6 +171,14 @@ struct Widgets: AsyncParsableCommand {
 - Add to "Migrate Specific Entities" examples
 - Update "Migration Order" section
 - Add any required Zoho OAuth scopes
+
+## CLI Commands
+
+The tool has two main command groups:
+- **`migrate`**: Migration commands (`migrate all`, `migrate customers`, etc.)
+- **`auth`**: OAuth token refresh commands (`auth freshbooks`, `auth zoho`)
+
+The `Auth` command in `main.swift` handles interactive OAuth flows and auto-updates `config.json`.
 
 ## Key Patterns
 
@@ -198,6 +206,15 @@ If a mapper needs ID mappings, pass them as parameters:
 static func map(_ entity: FBEntity, customerIdMapping: [Int: String]) -> ZBEntityCreateRequest?
 ```
 Return `nil` if required mapping is missing.
+
+### On-the-Fly Entity Creation
+For entities that reference other entities by name (not ID), use the on-the-fly creation pattern:
+1. At migration start, fetch existing Zoho entities and build a name→ID cache
+2. During migration, check if referenced entity exists in cache
+3. If not, create it in Zoho and add to cache
+4. Use the cached/new ID for the dependent entity
+
+Example: Expense migration creates vendors on-the-fly when they don't exist (see `MigrationService.migrateExpenses()`).
 
 ## API Endpoints
 
