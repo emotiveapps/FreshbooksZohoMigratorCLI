@@ -928,6 +928,40 @@ class MigrationService {
             try await migrateCustomers()
         }
 
+        // Build invoice ID mapping if not already populated (when running payments standalone)
+        if invoiceIdMapping.isEmpty {
+            print("Building invoice ID mapping...")
+
+            // Fetch FreshBooks invoices to get FB invoice ID -> invoice number
+            let fbInvoices = try await freshBooksAPI.fetchInvoices()
+            var fbIdToNumber: [Int: String] = [:]
+            for inv in fbInvoices {
+                if let number = inv.invoiceNumber {
+                    fbIdToNumber[inv.id] = number
+                }
+            }
+
+            // Fetch Zoho invoices to get invoice number -> Zoho invoice ID
+            let zohoInvoices = try await zohoAPI.fetchInvoices()
+            var zohoNumberToId: [String: String] = [:]
+            for inv in zohoInvoices {
+                if let number = inv.invoiceNumber, let id = inv.invoiceId {
+                    zohoNumberToId[number.lowercased()] = id
+                }
+            }
+
+            // Build the mapping: FB invoice ID -> Zoho invoice ID
+            for (fbId, fbNumber) in fbIdToNumber {
+                if let zohoId = zohoNumberToId[fbNumber.lowercased()] {
+                    invoiceIdMapping[fbId] = zohoId
+                }
+            }
+
+            if verbose {
+                print("  Built invoice mapping with \(invoiceIdMapping.count) entries")
+            }
+        }
+
         // Check for existing payments in Zoho (potential duplicates warning)
         if !dryRun {
             print("Checking for existing payments in Zoho...")
