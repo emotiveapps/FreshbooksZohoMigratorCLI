@@ -22,7 +22,7 @@ First off, I didn't know all the requirements in advance. That would have requir
 **To further this experiment, I asked the AI as follows:**
 
 > Thank you. Here's a reflection question. Please take your time to think it over. Could I have built
-  this app faster than the full-day it took (I'm guessing like 12 hours) if I had written a complex
+  this app faster than the full-day it took (the LLM estimates 10 hours; I guessed 12 hours 😇) if I had written a complex
   prompt with all the requirements in advance? Or would this have been too much context and not worked?
 
 > As an experiment, please write out a complex prompt for me defining all the requirements. I will then
@@ -101,6 +101,11 @@ I'll post an update with the results later this long weekend.
 3. idempotent - repeated runs of this tool should not cause duplicates or errors (*⚠️ I haven't tested this in every possible permutation. See disclaimer below.*)
 4. pick & choose - migrate only one data-type, or perform a full migration. It's up to you.
 5. bonus goal: complete - I hoped that the tool would migrate all my data, including receipts on expenses (i.e. attachments). In fact, no part of the migration was fixed manually after it was done.
+
+---
+**LLM Authorship Begins Here**
+ℹ️ Everything above this point was written by the author, by hand. Most of the rest was written by the LLM, with my guidance. 
+--- 
 
 > ⚠️ **DISCLAIMER**: This software is provided "as is", without warranty of any kind, express or implied. Use at your own risk. The author(s) are not responsible for any data loss, corruption, or damage that may result from using this tool. **Always back up your data before running any migration.** Test thoroughly with `--dry-run` first and verify results in a sandbox environment when possible.
 >
